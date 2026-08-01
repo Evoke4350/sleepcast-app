@@ -55,5 +55,12 @@
 	</array>
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<false/>
+	<!-- Without this the app is suspended when the screen locks and playback
+	     stops, which is the entire product failing. Paired with the .playback
+	     AVAudioSession category set in NightAudioImpl.swift; both are required. -->
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>audio</string>
+	</array>
 </dict>
 </plist>
