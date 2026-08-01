@@ -1,5 +1,14 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+  <!-- Playback has to survive the screen going off, which needs a foreground
+       service. Since Android 14 the mediaPlayback type also requires a live
+       MediaSession, and since Android 13 the notification it posts needs
+       POST_NOTIFICATIONS to be visible. -->
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+  <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+  <uses-permission android:name="android.permission.WAKE_LOCK" />
+
     <uses-permission android:name="android.permission.INTERNET" />
 
     <application
@@ -23,5 +32,14 @@
             <category android:name="android.intent.category.LAUNCHER" />
         </intent-filter>
       </activity>
-    </application>
+  
+    <service
+      android:name=".NightAudioService"
+      android:exported="false"
+      android:foregroundServiceType="mediaPlayback">
+      <intent-filter>
+        <action android:name="androidx.media3.session.MediaSessionService" />
+      </intent-filter>
+    </service>
+  </application>
 </manifest>

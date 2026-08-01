@@ -4,6 +4,9 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
+import android.content.Intent
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
@@ -22,15 +25,13 @@ import com.sleepcastapp.specs.NativeNightAudioSpec
  * There is no fade in this file on purpose. The fade curve lives in the shared
  * TypeScript so both platforms behave identically and it stays under test.
  *
- * NOT YET BACKGROUND-SAFE. Android will kill playback from a backgrounded app
- * without a foreground MediaSessionService, so this survives the screen going
- * off only briefly. That service is the next increment; until it lands, this
- * module proves the playback path and nothing about overnight behaviour.
+ * The player itself lives in NightAudioService, a foreground MediaSessionService,
+ * because that is the only way Android lets audio survive the screen going off —
+ * and because the player must outlive any particular React context, so a JS
+ * reload does not silence a night in progress. This module is a remote control.
  */
 class NightAudioModule(reactContext: ReactApplicationContext) :
   NativeNightAudioSpec(reactContext) {
-
-  private var player: ExoPlayer? = null
 
   init {
     Log.d("NightAudioMod", "constructed")
@@ -41,22 +42,41 @@ class NightAudioModule(reactContext: ReactApplicationContext) :
     return NAME
   }
 
-  private fun ensurePlayer(): ExoPlayer {
-    val existing = player
-    if (existing != null) return existing
-    val created = ExoPlayer.Builder(reactApplicationContext).build()
-    player = created
-    return created
+  private val player: ExoPlayer?
+    get() = NightAudioService.instance?.player
+
+  /** Start the service and run [block] once its player exists.
+   *
+   *  startForegroundService returns before onCreate has run, so the player is
+   *  not available on the next line. Rather than block the main thread, retry
+   *  on the looper for a short window — in practice the service is up within a
+   *  frame or two, and giving up is better than hanging a promise forever. */
+  private fun withPlayer(attempt: Int = 0, block: (ExoPlayer) -> Unit) {
+    val p = player
+    if (p != null) {
+      block(p)
+      return
+    }
+    if (attempt == 0) {
+      val ctx = reactApplicationContext
+      ctx.startForegroundService(Intent(ctx, NightAudioService::class.java))
+    }
+    if (attempt >= 50) { // ~2.5s
+      Log.w("NightAudioMod", "service never produced a player")
+      return
+    }
+    Handler(Looper.getMainLooper()).postDelayed({ withPlayer(attempt + 1, block) }, 50)
   }
 
   override fun play(url: String, startAtSeconds: Double, promise: Promise) {
     runOnMain {
       try {
-        val p = ensurePlayer()
-        p.setMediaItem(MediaItem.fromUri(url))
-        p.prepare()
-        if (startAtSeconds > 0) p.seekTo((startAtSeconds * 1000).toLong())
-        p.playWhenReady = true
+        withPlayer { p ->
+          p.setMediaItem(MediaItem.fromUri(url))
+          p.prepare()
+          if (startAtSeconds > 0) p.seekTo((startAtSeconds * 1000).toLong())
+          p.playWhenReady = true
+        }
         // Resolves once playback has been *requested*. Whether audio is
         // actually audible is a question for isPlaying(), not for this promise:
         // resolving on first frame would hang forever on a dead URL.
@@ -73,8 +93,10 @@ class NightAudioModule(reactContext: ReactApplicationContext) :
 
   override fun stop() = runOnMain {
     player?.stop()
-    player?.release()
-    player = null
+    // Stopping the service releases the player and drops the notification.
+    // Leaving it up after a night ends would be a lie in the shade.
+    val ctx = reactApplicationContext
+    ctx.stopService(Intent(ctx, NightAudioService::class.java))
   }
 
   override fun setVolume(volume: Double) = runOnMain {
@@ -128,10 +150,8 @@ class NightAudioModule(reactContext: ReactApplicationContext) :
   }
 
   override fun invalidate() {
-    runOnMain {
-      player?.release()
-      player = null
-    }
+    // Deliberately does NOT stop the service. A React context teardown (a JS
+    // reload, a dev refresh) must not end a night that is playing.
     super.invalidate()
   }
 
