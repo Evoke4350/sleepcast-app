@@ -1,6 +1,15 @@
-# sleepcast for iOS — thin slice
+# sleepcast for iOS and Android — thin slice
 
-**Status:** design, approved 2026-07-31. Not implemented.
+**Status:** design approved 2026-07-31. Scaffold built and verified on Android
+2026-07-31; no product code written yet.
+
+**Amended 2026-07-31:** originally iOS-only. Android builds on the Linux
+machine where the TypeScript is written, which changes the economics — the
+shared logic, the storage shim, the feed parser and the whole UI can be
+verified on a real device here before the Mac is involved. Only the iOS half of
+the audio module is written blind. The cost is that the audio module now needs
+two native implementations: AVPlayer on iOS, ExoPlayer/MediaSession on
+Android.
 
 A bare React Native app (no Expo) that plays a sleep podcast and fades out.
 This document covers the first slice only: the parts that are hard to get right

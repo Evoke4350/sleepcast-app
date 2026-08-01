@@ -1,0 +1,3 @@
+[submodule "vendor/player"]
+	path = vendor/player
+	url = https://github.com/Evoke4350/sleepcast-player.git
