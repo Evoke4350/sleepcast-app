@@ -5,7 +5,8 @@ import {
 
 import { installLocalStorage } from "./src/platform/storage";
 import { parseFeed } from "./src/platform/feed";
-import NightAudioMaybe from "./src/specs/NativeNightAudio";
+import { getNightAudio } from "./src/specs/NativeNightAudio";
+import { TurboModuleRegistry, NativeModules } from "react-native";
 import { fadeVolume, formatTime } from "./vendor/player/src/lib/engine";
 import { pickNextEpisode } from "./vendor/player/src/lib/plays";
 import { getPlays, recordHeardPlay } from "./vendor/player/src/lib/store";
@@ -15,9 +16,6 @@ import type { Episode } from "./vendor/player/src/lib/engine";
 // synchronously at module scope in places.
 installLocalStorage();
 
-// Null when the native module did not link. Surfaced in the UI rather than
-// crashed on, so the rest of the app can still be exercised.
-const NightAudio = NightAudioMaybe;
 
 // No relay. A native HTTP client has no CORS, so the whole SSRF-guarded proxy
 // the web app needs simply does not exist here — this is one of the three
@@ -60,7 +58,7 @@ export default function App() {
   async function endSession() {
     stopTick();
     endAtRef.current = null;
-    NightAudio?.stop();
+    getNightAudio()?.stop();
     setPlaying(false);
     setNow(null);
     setRemaining(0);
@@ -73,8 +71,8 @@ export default function App() {
     setNow(ep);
     startedAtRef.current = Date.now();
     endAtRef.current = Date.now() + minutes * 60_000;
-    await NightAudio?.play(ep.url, 0);
-    NightAudio?.setNowPlaying(ep.title, "sleepcast", "", 0);
+    await getNightAudio()?.play(ep.url, 0);
+    getNightAudio()?.setNowPlaying(ep.title, "sleepcast", "", 0);
     setPlaying(true);
 
     stopTick();
@@ -95,7 +93,7 @@ export default function App() {
       // The same fade curve the web player uses, from the shared repo. The
       // native module never computes it.
       const v = fadeVolume(left, FADE_SECONDS);
-      NightAudio?.setVolume(v);
+      getNightAudio()?.setVolume(v);
       setVolume(v);
       setRemaining(left);
     }, 1000);
@@ -116,7 +114,12 @@ export default function App() {
           <>
             <Text style={s.dim} testID="pool">{pool.length} episodes ready</Text>
             <Text style={s.dim} testID="audioStatus">
-              {NightAudio ? "audio: native module linked" : "audio: NOT LINKED (silent run)"}
+              {getNightAudio() ? "audio: native module linked" : "audio: NOT LINKED (silent run)"}
+            </Text>
+            <Text style={s.dim} testID="diag">
+              {`proxy:${typeof (global as any).__turboModuleProxy} ` +
+               `enforcing:${(() => { try { return TurboModuleRegistry.getEnforcing("NightAudio") ? "ok" : "null"; } catch (e: any) { return "throw"; } })()} ` +
+               `legacy:${NativeModules.NightAudio ? "yes" : "no"}`}
             </Text>
             <View style={s.row}>
               {TIMERS.map((m) => (

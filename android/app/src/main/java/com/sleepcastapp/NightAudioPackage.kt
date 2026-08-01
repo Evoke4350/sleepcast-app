@@ -1,5 +1,6 @@
 package com.sleepcastapp
 
+import android.util.Log
 import com.facebook.react.BaseReactPackage
 import com.facebook.react.bridge.NativeModule
 import com.facebook.react.bridge.ReactApplicationContext
@@ -7,10 +8,13 @@ import com.facebook.react.module.model.ReactModuleInfo
 import com.facebook.react.module.model.ReactModuleInfoProvider
 
 class NightAudioPackage : BaseReactPackage() {
-  override fun getModule(name: String, reactContext: ReactApplicationContext): NativeModule? =
-    if (name == NightAudioModule.NAME) NightAudioModule(reactContext) else null
+  override fun getModule(name: String, reactContext: ReactApplicationContext): NativeModule? {
+    Log.d("NightAudioPkg", "getModule asked for: $name")
+    return if (name == NightAudioModule.NAME) NightAudioModule(reactContext) else null
+  }
 
   override fun getReactModuleInfoProvider() = ReactModuleInfoProvider {
+    Log.d("NightAudioPkg", "getReactModuleInfoProvider called")
     mapOf(
       NightAudioModule.NAME to ReactModuleInfo(
         NightAudioModule.NAME,

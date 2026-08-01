@@ -29,8 +29,21 @@ export interface Spec extends TurboModule {
   isPlaying(): Promise<boolean>;
 }
 
-// get(), not getEnforcing(). getEnforcing throws at module scope, which takes
-// the whole bundle down before a single screen renders — the app shows nothing
-// at all and the log blames the app registry rather than the missing module.
-// A native module that failed to link is worth degrading over, not dying over.
-export default TurboModuleRegistry.get<Spec>("NightAudio");
+// Resolved lazily, on first use, and NOT at module scope.
+//
+// At module scope this is evaluated while the bundle is still loading. If the
+// TurboModule registry is not ready at that instant, get() returns null — and
+// that null is captured into the export forever, even though the native module
+// registers perfectly well moments later. The native side is asked for the
+// module, builds it, and JS never sees it.
+//
+// getEnforcing has the same timing problem but at least fails loudly; it throws
+// at module scope, which takes down the whole bundle before a screen renders.
+// Neither is what we want, so: resolve on demand and cache once found.
+let cached: Spec | null = null;
+
+export function getNightAudio(): Spec | null {
+  if (cached) return cached;
+  cached = TurboModuleRegistry.get<Spec>("NightAudio");
+  return cached;
+}
