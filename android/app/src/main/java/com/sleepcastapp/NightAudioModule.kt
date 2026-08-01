@@ -3,11 +3,11 @@ package com.sleepcastapp
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
-import androidx.media3.exoplayer.ExoPlayer
-import android.content.Intent
-import android.os.Handler
-import android.os.Looper
+import android.content.ComponentName
 import android.util.Log
+import androidx.media3.session.MediaController
+import androidx.media3.session.SessionToken
+import com.google.common.util.concurrent.MoreExecutors
 import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
 import com.sleepcastapp.specs.NativeNightAudioSpec
@@ -42,30 +42,38 @@ class NightAudioModule(reactContext: ReactApplicationContext) :
     return NAME
   }
 
-  private val player: ExoPlayer?
-    get() = NightAudioService.instance?.player
+  private var controller: MediaController? = null
 
-  /** Start the service and run [block] once its player exists.
+  private val player: Player?
+    get() = controller
+
+  /** Run [block] against a connected MediaController, connecting on first use.
    *
-   *  startForegroundService returns before onCreate has run, so the player is
-   *  not available on the next line. Rather than block the main thread, retry
-   *  on the looper for a short window — in practice the service is up within a
-   *  frame or two, and giving up is better than hanging a promise forever. */
-  private fun withPlayer(attempt: Int = 0, block: (ExoPlayer) -> Unit) {
-    val p = player
-    if (p != null) {
-      block(p)
+   *  Connecting is what starts the service, and it is deliberately NOT
+   *  startForegroundService. That call arms an OS timer of about five seconds
+   *  within which the service must call startForeground itself; media3 promotes
+   *  on its own schedule, when playback begins and it has a notification to
+   *  post, so the timer expired and Android killed the process with
+   *  ForegroundServiceDidNotStartInTimeException. Letting the library own the
+   *  lifecycle is the whole fix. */
+  private fun withPlayer(block: (Player) -> Unit) {
+    val existing = controller
+    if (existing != null) {
+      block(existing)
       return
     }
-    if (attempt == 0) {
-      val ctx = reactApplicationContext
-      ctx.startForegroundService(Intent(ctx, NightAudioService::class.java))
-    }
-    if (attempt >= 50) { // ~2.5s
-      Log.w("NightAudioMod", "service never produced a player")
-      return
-    }
-    Handler(Looper.getMainLooper()).postDelayed({ withPlayer(attempt + 1, block) }, 50)
+    val ctx = reactApplicationContext
+    val token = SessionToken(ctx, ComponentName(ctx, NightAudioService::class.java))
+    val future = MediaController.Builder(ctx, token).buildAsync()
+    future.addListener({
+      try {
+        val c = future.get()
+        controller = c
+        block(c)
+      } catch (e: Throwable) {
+        Log.w("NightAudioMod", "controller connect failed", e)
+      }
+    }, MoreExecutors.directExecutor())
   }
 
   override fun play(url: String, startAtSeconds: Double, promise: Promise) {
@@ -92,11 +100,12 @@ class NightAudioModule(reactContext: ReactApplicationContext) :
   override fun resume() = runOnMain { player?.playWhenReady = true }
 
   override fun stop() = runOnMain {
+    // Releasing the last controller lets media3 stop the service, which drops
+    // the notification. Leaving it up after a night ends would be a lie in the
+    // shade.
     player?.stop()
-    // Stopping the service releases the player and drops the notification.
-    // Leaving it up after a night ends would be a lie in the shade.
-    val ctx = reactApplicationContext
-    ctx.stopService(Intent(ctx, NightAudioService::class.java))
+    controller?.release()
+    controller = null
   }
 
   override fun setVolume(volume: Double) = runOnMain {
