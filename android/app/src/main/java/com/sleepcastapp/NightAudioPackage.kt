@@ -24,7 +24,7 @@ class NightAudioPackage : BaseReactPackage() {
         // never be resolved.
         NightAudioModule::class.java.name,
         false, // canOverrideExistingModule
-        false, // needsEagerInit
+        false, // needsEagerInit (tried true; made no difference)
         false, // isCxxModule
         true,  // isTurboModule
       )

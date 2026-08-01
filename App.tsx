@@ -118,8 +118,9 @@ export default function App() {
             </Text>
             <Text style={s.dim} testID="diag">
               {`proxy:${typeof (global as any).__turboModuleProxy} ` +
-               `enforcing:${(() => { try { return TurboModuleRegistry.getEnforcing("NightAudio") ? "ok" : "null"; } catch (e: any) { return "throw"; } })()} ` +
-               `legacy:${NativeModules.NightAudio ? "yes" : "no"}`}
+               `core:${TurboModuleRegistry.get("PlatformConstants") ? "ok" : "null"} ` +
+               `nm:${Object.keys(NativeModules).length} ` +
+               `mine:${TurboModuleRegistry.get("NightAudio") ? "ok" : "null"}`}
             </Text>
             <View style={s.row}>
               {TIMERS.map((m) => (
