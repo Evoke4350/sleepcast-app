@@ -108,6 +108,12 @@ android {
 }
 
 dependencies {
+    // ExoPlayer. media3 rather than the old exoplayer2 artifacts, and
+    // session/ is here now because the foreground service that makes
+    // background playback survive needs it.
+    implementation("androidx.media3:media3-exoplayer:1.4.1")
+    implementation("androidx.media3:media3-session:1.4.1")
+
     // The version of react-native is set by the React Native Gradle Plugin
     implementation("com.facebook.react:react-android")
 
