@@ -4,6 +4,7 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
+import android.util.Log
 import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
 import com.sleepcastapp.specs.NativeNightAudioSpec
@@ -31,7 +32,14 @@ class NightAudioModule(reactContext: ReactApplicationContext) :
 
   private var player: ExoPlayer? = null
 
-  override fun getName() = NAME
+  init {
+    Log.d("NightAudioMod", "constructed")
+  }
+
+  override fun getName(): String {
+    Log.d("NightAudioMod", "getName() called")
+    return NAME
+  }
 
   private fun ensurePlayer(): ExoPlayer {
     val existing = player
