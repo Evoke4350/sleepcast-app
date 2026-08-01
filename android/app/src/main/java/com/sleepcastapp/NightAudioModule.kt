@@ -43,6 +43,12 @@ class NightAudioModule(reactContext: ReactApplicationContext) :
   }
 
   private var controller: MediaController? = null
+  // Held so play() can attach it to the MediaItem. Metadata has to be on the
+  // item when playback starts: pushing it afterwards would mean replacing the
+  // item, which restarts the audio.
+  private var pendingTitle: String = ""
+  private var pendingArtist: String = "sleepcast"
+  private var pendingArtwork: String = ""
 
   private val player: Player?
     get() = controller
@@ -80,7 +86,18 @@ class NightAudioModule(reactContext: ReactApplicationContext) :
     runOnMain {
       try {
         withPlayer { p ->
-          p.setMediaItem(MediaItem.fromUri(url))
+          val metadata = MediaMetadata.Builder()
+            .setTitle(pendingTitle.ifEmpty { "sleepcast" })
+            .setArtist(pendingArtist)
+            .apply {
+              if (pendingArtwork.isNotEmpty()) {
+                setArtworkUri(android.net.Uri.parse(pendingArtwork))
+              }
+            }
+            .build()
+          p.setMediaItem(
+            MediaItem.Builder().setUri(url).setMediaMetadata(metadata).build()
+          )
           p.prepare()
           if (startAtSeconds > 0) p.seekTo((startAtSeconds * 1000).toLong())
           p.playWhenReady = true
@@ -132,22 +149,17 @@ class NightAudioModule(reactContext: ReactApplicationContext) :
     promise.resolve(player?.isPlaying ?: false)
   }
 
+  /** Call BEFORE play(). The lock screen reads what is on the MediaItem, and
+   *  swapping the item after playback starts would restart the audio. */
   override fun setNowPlaying(
     title: String,
     artist: String,
     artworkUrl: String,
     durationSeconds: Double
   ) = runOnMain {
-    val metadata = MediaMetadata.Builder()
-      .setTitle(title)
-      .setArtist(artist)
-      .build()
-    player?.let { p ->
-      p.setMediaItem(
-        p.currentMediaItem?.buildUpon()?.setMediaMetadata(metadata)?.build()
-          ?: return@let
-      )
-    }
+    pendingTitle = title
+    pendingArtist = artist
+    pendingArtwork = artworkUrl
   }
 
   private fun runOnMain(block: () -> Unit) {

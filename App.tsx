@@ -71,8 +71,10 @@ export default function App() {
     setNow(ep);
     startedAtRef.current = Date.now();
     endAtRef.current = Date.now() + minutes * 60_000;
-    await getNightAudio()?.play(ep.url, 0);
+    // Metadata first: it has to be on the MediaItem when playback starts, or
+    // the lock screen shows nothing and setting it later restarts the audio.
     getNightAudio()?.setNowPlaying(ep.title, "sleepcast", "", 0);
+    await getNightAudio()?.play(ep.url, 0);
     setPlaying(true);
 
     stopTick();
