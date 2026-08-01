@@ -29,4 +29,8 @@ export interface Spec extends TurboModule {
   isPlaying(): Promise<boolean>;
 }
 
-export default TurboModuleRegistry.getEnforcing<Spec>("NightAudio");
+// get(), not getEnforcing(). getEnforcing throws at module scope, which takes
+// the whole bundle down before a single screen renders — the app shows nothing
+// at all and the log blames the app registry rather than the missing module.
+// A native module that failed to link is worth degrading over, not dying over.
+export default TurboModuleRegistry.get<Spec>("NightAudio");

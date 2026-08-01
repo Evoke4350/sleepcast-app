@@ -5,7 +5,7 @@ import {
 
 import { installLocalStorage } from "./src/platform/storage";
 import { parseFeed } from "./src/platform/feed";
-import NightAudio from "./src/specs/NativeNightAudio";
+import NightAudioMaybe from "./src/specs/NativeNightAudio";
 import { fadeVolume, formatTime } from "./vendor/player/src/lib/engine";
 import { pickNextEpisode } from "./vendor/player/src/lib/plays";
 import { getPlays, recordHeardPlay } from "./vendor/player/src/lib/store";
@@ -14,6 +14,10 @@ import type { Episode } from "./vendor/player/src/lib/engine";
 // Must run before anything touches the shared code, which reads localStorage
 // synchronously at module scope in places.
 installLocalStorage();
+
+// Null when the native module did not link. Surfaced in the UI rather than
+// crashed on, so the rest of the app can still be exercised.
+const NightAudio = NightAudioMaybe;
 
 // No relay. A native HTTP client has no CORS, so the whole SSRF-guarded proxy
 // the web app needs simply does not exist here — this is one of the three
@@ -56,7 +60,7 @@ export default function App() {
   async function endSession() {
     stopTick();
     endAtRef.current = null;
-    NightAudio.stop();
+    NightAudio?.stop();
     setPlaying(false);
     setNow(null);
     setRemaining(0);
@@ -69,8 +73,8 @@ export default function App() {
     setNow(ep);
     startedAtRef.current = Date.now();
     endAtRef.current = Date.now() + minutes * 60_000;
-    await NightAudio.play(ep.url, 0);
-    NightAudio.setNowPlaying(ep.title, "sleepcast", "", 0);
+    await NightAudio?.play(ep.url, 0);
+    NightAudio?.setNowPlaying(ep.title, "sleepcast", "", 0);
     setPlaying(true);
 
     stopTick();
@@ -91,7 +95,7 @@ export default function App() {
       // The same fade curve the web player uses, from the shared repo. The
       // native module never computes it.
       const v = fadeVolume(left, FADE_SECONDS);
-      NightAudio.setVolume(v);
+      NightAudio?.setVolume(v);
       setVolume(v);
       setRemaining(left);
     }, 1000);
@@ -111,6 +115,9 @@ export default function App() {
         ) : !playing ? (
           <>
             <Text style={s.dim} testID="pool">{pool.length} episodes ready</Text>
+            <Text style={s.dim} testID="audioStatus">
+              {NightAudio ? "audio: native module linked" : "audio: NOT LINKED (silent run)"}
+            </Text>
             <View style={s.row}>
               {TIMERS.map((m) => (
                 <TouchableOpacity key={m} style={s.btn} testID={`start-${m}`} onPress={() => startNight(m)}>
