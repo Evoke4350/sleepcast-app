@@ -3,7 +3,11 @@ package com.sleepcastapp
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
-import androidx.media3.exoplayer.ExoPlayer
+import android.content.ComponentName
+import android.util.Log
+import androidx.media3.session.MediaController
+import androidx.media3.session.SessionToken
+import com.google.common.util.concurrent.MoreExecutors
 import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
 import com.sleepcastapp.specs.NativeNightAudioSpec
@@ -21,34 +25,83 @@ import com.sleepcastapp.specs.NativeNightAudioSpec
  * There is no fade in this file on purpose. The fade curve lives in the shared
  * TypeScript so both platforms behave identically and it stays under test.
  *
- * NOT YET BACKGROUND-SAFE. Android will kill playback from a backgrounded app
- * without a foreground MediaSessionService, so this survives the screen going
- * off only briefly. That service is the next increment; until it lands, this
- * module proves the playback path and nothing about overnight behaviour.
+ * The player itself lives in NightAudioService, a foreground MediaSessionService,
+ * because that is the only way Android lets audio survive the screen going off —
+ * and because the player must outlive any particular React context, so a JS
+ * reload does not silence a night in progress. This module is a remote control.
  */
 class NightAudioModule(reactContext: ReactApplicationContext) :
   NativeNightAudioSpec(reactContext) {
 
-  private var player: ExoPlayer? = null
+  init {
+    Log.d("NightAudioMod", "constructed")
+  }
 
-  override fun getName() = NAME
+  override fun getName(): String {
+    Log.d("NightAudioMod", "getName() called")
+    return NAME
+  }
 
-  private fun ensurePlayer(): ExoPlayer {
-    val existing = player
-    if (existing != null) return existing
-    val created = ExoPlayer.Builder(reactApplicationContext).build()
-    player = created
-    return created
+  private var controller: MediaController? = null
+  // Held so play() can attach it to the MediaItem. Metadata has to be on the
+  // item when playback starts: pushing it afterwards would mean replacing the
+  // item, which restarts the audio.
+  private var pendingTitle: String = ""
+  private var pendingArtist: String = "sleepcast"
+  private var pendingArtwork: String = ""
+
+  private val player: Player?
+    get() = controller
+
+  /** Run [block] against a connected MediaController, connecting on first use.
+   *
+   *  Connecting is what starts the service, and it is deliberately NOT
+   *  startForegroundService. That call arms an OS timer of about five seconds
+   *  within which the service must call startForeground itself; media3 promotes
+   *  on its own schedule, when playback begins and it has a notification to
+   *  post, so the timer expired and Android killed the process with
+   *  ForegroundServiceDidNotStartInTimeException. Letting the library own the
+   *  lifecycle is the whole fix. */
+  private fun withPlayer(block: (Player) -> Unit) {
+    val existing = controller
+    if (existing != null) {
+      block(existing)
+      return
+    }
+    val ctx = reactApplicationContext
+    val token = SessionToken(ctx, ComponentName(ctx, NightAudioService::class.java))
+    val future = MediaController.Builder(ctx, token).buildAsync()
+    future.addListener({
+      try {
+        val c = future.get()
+        controller = c
+        block(c)
+      } catch (e: Throwable) {
+        Log.w("NightAudioMod", "controller connect failed", e)
+      }
+    }, MoreExecutors.directExecutor())
   }
 
   override fun play(url: String, startAtSeconds: Double, promise: Promise) {
     runOnMain {
       try {
-        val p = ensurePlayer()
-        p.setMediaItem(MediaItem.fromUri(url))
-        p.prepare()
-        if (startAtSeconds > 0) p.seekTo((startAtSeconds * 1000).toLong())
-        p.playWhenReady = true
+        withPlayer { p ->
+          val metadata = MediaMetadata.Builder()
+            .setTitle(pendingTitle.ifEmpty { "sleepcast" })
+            .setArtist(pendingArtist)
+            .apply {
+              if (pendingArtwork.isNotEmpty()) {
+                setArtworkUri(android.net.Uri.parse(pendingArtwork))
+              }
+            }
+            .build()
+          p.setMediaItem(
+            MediaItem.Builder().setUri(url).setMediaMetadata(metadata).build()
+          )
+          p.prepare()
+          if (startAtSeconds > 0) p.seekTo((startAtSeconds * 1000).toLong())
+          p.playWhenReady = true
+        }
         // Resolves once playback has been *requested*. Whether audio is
         // actually audible is a question for isPlaying(), not for this promise:
         // resolving on first frame would hang forever on a dead URL.
@@ -64,9 +117,12 @@ class NightAudioModule(reactContext: ReactApplicationContext) :
   override fun resume() = runOnMain { player?.playWhenReady = true }
 
   override fun stop() = runOnMain {
+    // Releasing the last controller lets media3 stop the service, which drops
+    // the notification. Leaving it up after a night ends would be a lie in the
+    // shade.
     player?.stop()
-    player?.release()
-    player = null
+    controller?.release()
+    controller = null
   }
 
   override fun setVolume(volume: Double) = runOnMain {
@@ -93,22 +149,17 @@ class NightAudioModule(reactContext: ReactApplicationContext) :
     promise.resolve(player?.isPlaying ?: false)
   }
 
+  /** Call BEFORE play(). The lock screen reads what is on the MediaItem, and
+   *  swapping the item after playback starts would restart the audio. */
   override fun setNowPlaying(
     title: String,
     artist: String,
     artworkUrl: String,
     durationSeconds: Double
   ) = runOnMain {
-    val metadata = MediaMetadata.Builder()
-      .setTitle(title)
-      .setArtist(artist)
-      .build()
-    player?.let { p ->
-      p.setMediaItem(
-        p.currentMediaItem?.buildUpon()?.setMediaMetadata(metadata)?.build()
-          ?: return@let
-      )
-    }
+    pendingTitle = title
+    pendingArtist = artist
+    pendingArtwork = artworkUrl
   }
 
   private fun runOnMain(block: () -> Unit) {
@@ -120,10 +171,8 @@ class NightAudioModule(reactContext: ReactApplicationContext) :
   }
 
   override fun invalidate() {
-    runOnMain {
-      player?.release()
-      player = null
-    }
+    // Deliberately does NOT stop the service. A React context teardown (a JS
+    // reload, a dev refresh) must not end a night that is playing.
     super.invalidate()
   }
 

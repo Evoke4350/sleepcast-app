@@ -71,8 +71,10 @@ export default function App() {
     setNow(ep);
     startedAtRef.current = Date.now();
     endAtRef.current = Date.now() + minutes * 60_000;
-    await getNightAudio()?.play(ep.url, 0);
+    // Metadata first: it has to be on the MediaItem when playback starts, or
+    // the lock screen shows nothing and setting it later restarts the audio.
     getNightAudio()?.setNowPlaying(ep.title, "sleepcast", "", 0);
+    await getNightAudio()?.play(ep.url, 0);
     setPlaying(true);
 
     stopTick();
@@ -117,7 +119,10 @@ export default function App() {
               {getNightAudio() ? "audio: native module linked" : "audio: NOT LINKED (silent run)"}
             </Text>
             <Text style={s.dim} testID="diag">
-              {`proxy:${typeof (global as any).__turboModuleProxy} ` +
+              {/* globalThis, not global: `global` is a Node type this project
+                  does not pull in (no @types/node), so it was the one thing
+                  failing `tsc --noEmit`. Same object at runtime under Hermes. */}
+              {`proxy:${typeof (globalThis as any).__turboModuleProxy} ` +
                `core:${TurboModuleRegistry.get("PlatformConstants") ? "ok" : "null"} ` +
                `nm:${Object.keys(NativeModules).length} ` +
                `mine:${TurboModuleRegistry.get("NightAudio") ? "ok" : "null"}`}
