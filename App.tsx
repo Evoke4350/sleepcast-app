@@ -119,7 +119,10 @@ export default function App() {
               {getNightAudio() ? "audio: native module linked" : "audio: NOT LINKED (silent run)"}
             </Text>
             <Text style={s.dim} testID="diag">
-              {`proxy:${typeof (global as any).__turboModuleProxy} ` +
+              {/* globalThis, not global: `global` is a Node type this project
+                  does not pull in (no @types/node), so it was the one thing
+                  failing `tsc --noEmit`. Same object at runtime under Hermes. */}
+              {`proxy:${typeof (globalThis as any).__turboModuleProxy} ` +
                `core:${TurboModuleRegistry.get("PlatformConstants") ? "ok" : "null"} ` +
                `nm:${Object.keys(NativeModules).length} ` +
                `mine:${TurboModuleRegistry.get("NightAudio") ? "ok" : "null"}`}
