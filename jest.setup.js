@@ -16,3 +16,16 @@ jest.mock('react-native-mmkv', () => {
   } = jest.requireActual('react-native-mmkv/lib/createMMKV/createMockMMKV');
   return {createMMKV: () => createMockMMKV()};
 });
+
+// SafeAreaProvider reads its insets from a native module. Without one it
+// renders null children rather than failing loudly, so every testID in the
+// tree simply stops existing and the failure reads as "component missing"
+// instead of "no safe-area provider". The library ships a mock for exactly
+// this; the .tsx extension is explicit because jest's default resolver
+// doesn't try it for a bare subpath.
+jest.mock(
+  'react-native-safe-area-context',
+  // .default because the mock is an ES default export and this require is
+  // interop'd, not a namespace import.
+  () => require('react-native-safe-area-context/jest/mock.tsx').default,
+);
