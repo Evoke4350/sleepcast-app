@@ -128,6 +128,10 @@ class NightAudioModule(reactContext: ReactApplicationContext) :
             MediaItem.Builder().setUri(url).setMediaMetadata(metadata).build()
           )
           p.prepare()
+          // invariant: a fade-end can leave a reused player muted (the timer
+          // branch sets volume to 0 before stopping), so every fresh night
+          // must reset volume to full before playback starts or it is silent.
+          p.volume = 1f
           if (startAtSeconds > 0) p.seekTo((startAtSeconds * 1000).toLong())
           p.playWhenReady = true
         }
@@ -159,6 +163,11 @@ class NightAudioModule(reactContext: ReactApplicationContext) :
           player?.stop()
           val heard = Math.round((SystemClock.elapsedRealtime() - startedAtElapsed) / 1000.0).toInt()
           emitNightEnded(timerEpisodeId, heard)
+          // Mirror stop()'s teardown: releasing the last controller lets
+          // media3 stop the service and drop the lingering notification.
+          // Without this, the ExoPlayer stays alive at volume 0 after a fade.
+          controller?.release()
+          controller = null
           cancelTimerInternal()
           return
         }

@@ -114,7 +114,9 @@ public class NightAudioImpl: NSObject {
       if remaining <= 0 {
         self.player?.volume = 0
         self.stop()
-        let heard = Int(Double(DispatchTime.now().uptimeNanoseconds - self.startedAt.uptimeNanoseconds) / 1_000_000_000)
+        // Rounded, not truncated, to match Android's Math.round — ±1s at the
+        // HEARD_SEC boundary otherwise.
+        let heard = Int((Double(DispatchTime.now().uptimeNanoseconds - self.startedAt.uptimeNanoseconds) / 1_000_000_000).rounded())
         self.onNightEnded?(self.timerEpisodeId, heard)
         return // self.stop() above already cancelled this timer
       }

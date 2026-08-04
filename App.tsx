@@ -158,13 +158,12 @@ export default function App() {
   // Now it's triggered by native's onNightEnded event, so it runs whether or
   // not JS was awake when the timer actually reached zero.
   async function onNightEnded(episodeId: string, heardSeconds: number) {
-    // Match against what's actually playing/queued; do NOT fall back to
-    // nowRef when the id matches neither — that would misattribute a
-    // stale/late event to the wrong episode. finishNight(null, …) is a safe
-    // no-op write in that case.
-    const ep = (nowRef.current && nowRef.current.id === episodeId)
-      ? nowRef.current
-      : (lineupRef.current.find((e) => e.id === episodeId) ?? null);
+    // No live night in THIS JS instance (e.g. JS reloaded under a surviving
+    // native timer): bail before finishNight can clear the reconcile marker
+    // while writing nothing — the marker is the only remaining record of the
+    // night, and the next-launch reconcile will turn it into the ledger entry.
+    if (endAtRef.current === null) return;
+    const ep = nowRef.current; // single-lead night: the current episode is the one that ended
     finishNight(ep, heardSeconds, "faded");
   }
 

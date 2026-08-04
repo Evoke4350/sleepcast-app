@@ -148,6 +148,29 @@ test("manual stop cancels the native timer", async () => {
 // effect should notice the marker, confirm with native that nothing is
 // actually playing, and reconcile the marker into lastNight/plays so
 // resume-after-fade still works.
+// Important-fix regression: an onNightEnded that arrives into a JS instance
+// with NO live night (e.g. the native timer survived a JS reload while
+// nowRef/endAtRef are empty) must NOT clear the reconcile marker — the marker
+// is the only remaining record of that night, and finishNight would wipe it
+// while writing nothing. The handler should bail early and leave the marker
+// for the next-launch reconcile.
+test("unmatched onNightEnded leaves the marker intact and writes nothing", async () => {
+  mockAudio = freshAudio(); // isPlaying defaults true, so mount-time reconcile leaves the marker alone
+  const lead = { id: "a", title: "A Quiet Night", url: "https://x/a.mp3", feedId: "f", date: "2024-01-01" };
+  mockPoolResult = { pool: [lead], feedTitles: { f: "F" }, errors: [] };
+  saveMarker({
+    episodeId: "a", startedAt: Date.now() - 5 * 60_000, timerMinutes: 5,
+    lineup: [lead], playedIds: [], feedTitles: { f: "F" }, wasVaried: false,
+  });
+  let tree!: TestRenderer.ReactTestRenderer;
+  await act(async () => { tree = TestRenderer.create(<App />); });
+  await act(async () => {}); // buildPool + mount effects settle; no night is ever started
+  await act(async () => { mockAudio.fireEnded({ episodeId: "a", heardSeconds: 300 }); });
+  expect(loadMarker()).not.toBeNull(); // marker survives for next-launch reconcile
+  expect(loadLastNight()).toBeNull(); // the event wrote no ledger entry
+  act(() => { tree.unmount(); });
+});
+
 test("reconciles a killed night's marker on launch when nothing is playing", async () => {
   mockAudio = freshAudio();
   mockAudio.isPlaying = jest.fn(async () => false);
