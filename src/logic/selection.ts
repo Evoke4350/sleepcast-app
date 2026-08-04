@@ -10,7 +10,7 @@ export type Strategy = "shuffle" | "spread" | "varied";
 export interface Lineup { lead: Episode; lineup: Episode[]; wasVaried: boolean; }
 export interface Resume { lead: Episode; minutes: number; }
 export interface Deps {
-  embed?: (t: string[]) => Promise<Float32Array[]>;
+  embed?: (t: string[], onProgress?: (done: number, total: number) => void) => Promise<Float32Array[]>;
   rand?: () => number;
   now?: () => number;
   timeoutMs?: number;

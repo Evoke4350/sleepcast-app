@@ -12,12 +12,15 @@ export interface PoolResult {
 
 export async function buildPool(fetchXml: XmlFetcher): Promise<PoolResult> {
   const feeds = loadState().feeds.filter((f) => f.enabled);
-  const pool: Episode[] = [];
-  const feedTitles: Record<string, string> = {};
-  const errors: string[] = [];
 
-  await Promise.all(
-    feeds.map(async (f) => {
+  // Fetch concurrently but assemble in feed order, so the pool (and therefore a
+  // seeded spread) is reproducible rather than dependent on network timing.
+  type FeedResult =
+    | { id: string; title: string; episodes: Episode[] }
+    | { error: string };
+
+  const results = await Promise.all(
+    feeds.map(async (f): Promise<FeedResult> => {
       let xml: string | null = null;
       try {
         xml = await fetchXml(f.url);
@@ -26,18 +29,28 @@ export async function buildPool(fetchXml: XmlFetcher): Promise<PoolResult> {
         xml = getCachedFeedXml(f.id); // offline path
       }
       if (!xml) {
-        errors.push(`${f.title || f.url}: no network and no cache`);
-        return;
+        return { error: `${f.title || f.url}: no network and no cache` };
       }
       try {
         const feed = parseFeed(xml, f.id);
-        feedTitles[f.id] = feed.title || f.title;
-        pool.push(...feed.episodes);
+        return { id: f.id, title: feed.title || f.title, episodes: feed.episodes };
       } catch (e) {
-        errors.push(`${f.title || f.url}: ${(e as Error).message}`);
+        return { error: `${f.title || f.url}: ${(e as Error).message}` };
       }
     })
   );
+
+  const pool: Episode[] = [];
+  const feedTitles: Record<string, string> = {};
+  const errors: string[] = [];
+  for (const r of results) {
+    if ("error" in r) {
+      errors.push(r.error);
+    } else {
+      feedTitles[r.id] = r.title;
+      pool.push(...r.episodes);
+    }
+  }
 
   return { pool, feedTitles, errors };
 }

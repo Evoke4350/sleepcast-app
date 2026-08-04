@@ -6,7 +6,10 @@ import {
 import { parseOpml, buildOpml } from "../platform/opml";
 import type { AppState } from "../../vendor/player/src/lib/store";
 
-const TIMERS = [1, 5, 45, 60];
+// All >= the vendor store's TIMER_MIN (5); a sub-minimum chip would start that
+// many minutes but silently persist as 5, so the selection wouldn't survive a
+// relaunch honestly.
+const TIMERS = [5, 45, 60];
 
 interface SetupProps {
   onStart: (strategy: "shuffle" | "spread" | "varied", minutes: number) => void;

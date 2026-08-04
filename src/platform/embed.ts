@@ -22,11 +22,13 @@ export type RunSession = (encs: Encoding[]) => Promise<Float32Array[]>;
 const CACHE_KEY = "sleepcast2.titlevecs";
 const CACHE_CAP = 6000;
 
+/* eslint-disable no-bitwise -- djb2 string hash, ported verbatim from vendor semantic-model.ts */
 function hash(s: string): string {
   let h = 5381;
   for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0;
   return (h >>> 0).toString(36);
 }
+/* eslint-enable no-bitwise */
 type VecCache = Record<string, number[]>;
 function loadCache(): VecCache { try { return JSON.parse(localStorage.getItem(CACHE_KEY) || "{}"); } catch { return {}; } }
 function saveCache(cache: VecCache) {
@@ -37,7 +39,7 @@ function saveCache(cache: VecCache) {
 const dequant = (q: number[]) => Float32Array.from(q, (x) => x / 127);
 
 export function makeEmbedder(run: RunSession, tokenize: (t: string) => Encoding) {
-  return async function embedTexts(
+  return async function embed(
     texts: string[],
     onProgress?: (done: number, total: number) => void
   ): Promise<Float32Array[]> {
@@ -110,11 +112,8 @@ async function fetchAssetText(mod: number): Promise<string> {
 function init(): Promise<Ready> {
   if (!readyP) {
     readyP = (async () => {
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
       const { InferenceSession, Tensor } = require("onnxruntime-react-native");
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
       const modelRef = require("../assets/minilm/model.onnx");
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
       const vocabRef = require("../assets/minilm/vocab.txt");
       const [modelBytes, vocabTxt] = await Promise.all([
         fetchAssetBytes(modelRef),

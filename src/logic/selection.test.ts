@@ -1,6 +1,7 @@
 import "../platform/storage";
 import { installLocalStorage } from "../platform/storage";
-import { chooseLineup } from "./selection";
+import { chooseLineup, resumeNight } from "./selection";
+import { saveLastNight } from "../../vendor/player/src/lib/store";
 import type { Episode } from "../../vendor/player/src/lib/engine";
 
 installLocalStorage();
@@ -31,12 +32,19 @@ test("varied falls back to the spread when embedding times out", async () => {
   expect(r!.lead.id).toBeDefined();
 });
 
+test("varied falls back to the spread when embedding rejects", async () => {
+  const embed = async () => {
+    throw new Error("model unavailable");
+  };
+  const r = await chooseLineup("varied", POOL, { embed, rand: () => 0 });
+  expect(r!.wasVaried).toBe(true); // the intent was varied; the spread stood in
+  expect(r!.lead.id).toBeDefined();
+  expect(r!.lineup.length).toBeGreaterThan(0);
+});
+
 test("returns null for an empty pool", async () => {
   expect(await chooseLineup("shuffle", [], {})).toBeNull();
 });
-
-import { resumeNight } from "./selection";
-import { saveLastNight } from "../../vendor/player/src/lib/store";
 
 test("resume offers the next spread episode within the rearm window", () => {
   saveLastNight({

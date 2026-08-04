@@ -42,10 +42,10 @@ export default function App() {
 
   useEffect(() => {
     buildPool(nativeFetch)
-      .then(({ pool, feedTitles, errors }) => {
-        if (!pool.length) throw new Error(errors[0] ?? "no episodes");
+      .then(({ pool: builtPool, feedTitles, errors }) => {
+        if (!builtPool.length) throw new Error(errors[0] ?? "no episodes");
         feedTitlesRef.current = feedTitles;
-        setPool(pool);
+        setPool(builtPool);
       })
       .catch((e) => setError(String(e?.message ?? e)));
     return () => stopTick();

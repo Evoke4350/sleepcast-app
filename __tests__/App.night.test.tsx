@@ -62,16 +62,16 @@ test("resume-after-fade: the fade loop's endSession call saves last night", asyn
     await act(async () => { tree = TestRenderer.create(<App />); });
     await act(async () => {}); // let buildPool resolve
 
-    // Shortest available timer so the fade-to-zero doesn't require advancing
-    // fake time by an unreasonable amount.
-    await act(async () => { tree.root.findByProps({ testID: "timer-1" }).props.onPress(); });
+    // Shortest available timer (5 min) so the fade-to-zero doesn't require
+    // advancing fake time by an unreasonable amount.
+    await act(async () => { tree.root.findByProps({ testID: "timer-5" }).props.onPress(); });
     await act(async () => { tree.root.findByProps({ testID: "start-shuffle" }).props.onPress(); });
     expect(tree.root.findByProps({ testID: "nowPlaying" }).props.children).toBe("A Quiet Night");
 
-    // Past the 1-minute timer: the interval's `left <= 0` branch fires and
+    // Past the 5-minute timer: the interval's `left <= 0` branch fires and
     // calls endSession("faded"). advanceTimersByTimeAsync (not the sync
     // variant) lets the interval's own microtasks resolve between ticks.
-    await act(async () => { await jest.advanceTimersByTimeAsync(61_000); });
+    await act(async () => { await jest.advanceTimersByTimeAsync(301_000); });
 
     const last = loadLastNight();
     expect(last).not.toBeNull();
