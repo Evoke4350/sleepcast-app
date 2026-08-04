@@ -9,8 +9,19 @@ Fix logic bugs there and bump the pointer; editing `vendor/` directly leaves a
 change on no branch of anything.
 
 ```bash
-git submodule update --init
-mise exec node@22 -- npm install
+git clone git@github.com:Evoke4350/sleepcast-app.git
+cd sleepcast-app
+git submodule update --init          # vendor/player; nothing builds without it
+npm ci                               # Node >= 22.11
+```
+
+Then confirm the clone is sound before touching anything native. All three are
+clean on main and take about ten seconds together:
+
+```bash
+npm run lint
+npm run typecheck
+npm test
 ```
 
 ## Android — builds on Linux
@@ -43,12 +54,20 @@ emulator.
 ## iOS — needs a Mac
 
 Nothing in the iOS path can be built or tested on Linux, so it is written
-blind here and debugged there.
+blind here and debugged there. **Everything in this section is unverified.**
+
+You will need Xcode, and CocoaPods via the bundled Gemfile rather than a
+system gem — the Gemfile pins the version the Podfile expects:
 
 ```bash
-cd ios && pod install
-open SleepcastApp.xcworkspace
+bundle install
+cd ios && bundle exec pod install
+open SleepcastApp.xcworkspace       # .xcworkspace, never .xcodeproj
 ```
+
+`ios/Podfile.lock` is not committed and no pod has ever been installed, so the
+first `pod install` resolves everything from scratch and will take a while.
+Commit the lock file once it works.
 
 Set the signing team. `UIBackgroundModes: audio` is already in `Info.plist`,
 paired with the `.playback` audio session category in `NightAudioImpl.swift`;
@@ -74,6 +93,11 @@ The likely trouble spots, in order:
 
 Android needed exactly this kind of wiring and it was the hard part there too —
 see the `jni/` directory and the commit that added it.
+
+Two native dependencies autolink and both need the pod install to succeed
+before anything runs: `react-native-mmkv` (with its `react-native-nitro-modules`
+peer, which is C++ and the slowest thing in the build) and
+`react-native-safe-area-context`.
 
 ## Dependencies worth knowing about
 
