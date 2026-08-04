@@ -2,6 +2,9 @@ import "../src/platform/storage";
 import { installLocalStorage } from "../src/platform/storage";
 import React from "react";
 import TestRenderer, { act } from "react-test-renderer";
+// Real store module (not mocked) so the regression test below can assert on
+// what App actually persisted.
+import { loadLastNight } from "../vendor/player/src/lib/store";
 
 installLocalStorage();
 
@@ -39,4 +42,44 @@ test("shows the error screen when the pool can't be built", async () => {
   await act(async () => {}); // let buildPool resolve and the .catch run
   expect(tree.root.findByProps({ testID: "error" }).props.children).toBe("boom");
   act(() => { tree.unmount(); });
+});
+
+// Regression for the stale-closure bug: endSession used to read the `now`
+// STATE, but the interval created in beginPlayback captured the closure from
+// the render where `now` was still null (setup screen). So on timer-fade,
+// `if (now)` was false and saveLastNight never ran — resume-after-fade
+// silently never worked, even though manual stop (a fresh PlayerScreen
+// closure) looked fine. This drives a real fade-to-zero and checks the
+// ledger that only endSession's "faded" path writes.
+test("resume-after-fade: the fade loop's endSession call saves last night", async () => {
+  mockPoolResult = {
+    pool: [{ id: "a", title: "A Quiet Night", url: "https://x/a.mp3", feedId: "f", date: "2024-01-01" }],
+    feedTitles: { f: "F" }, errors: [],
+  };
+  jest.useFakeTimers();
+  try {
+    let tree!: TestRenderer.ReactTestRenderer;
+    await act(async () => { tree = TestRenderer.create(<App />); });
+    await act(async () => {}); // let buildPool resolve
+
+    // Shortest available timer so the fade-to-zero doesn't require advancing
+    // fake time by an unreasonable amount.
+    await act(async () => { tree.root.findByProps({ testID: "timer-1" }).props.onPress(); });
+    await act(async () => { tree.root.findByProps({ testID: "start-shuffle" }).props.onPress(); });
+    expect(tree.root.findByProps({ testID: "nowPlaying" }).props.children).toBe("A Quiet Night");
+
+    // Past the 1-minute timer: the interval's `left <= 0` branch fires and
+    // calls endSession("faded"). advanceTimersByTimeAsync (not the sync
+    // variant) lets the interval's own microtasks resolve between ticks.
+    await act(async () => { await jest.advanceTimersByTimeAsync(61_000); });
+
+    const last = loadLastNight();
+    expect(last).not.toBeNull();
+    expect(last?.playedIds).toContain("a");
+    expect(last?.endedVia).toBe("faded");
+
+    act(() => { tree.unmount(); });
+  } finally {
+    jest.useRealTimers();
+  }
 });

@@ -34,8 +34,12 @@ export default function SetupScreen({ onStart, onResume, resumeAvailable }: Setu
     await Share.share({ message: xml });
   }
   function importOpml(xml: string) {
+    let parsed;
+    try { parsed = parseOpml(xml); } catch { return; }
     let next = state;
-    for (const feed of parseOpml(xml)) { try { next = addCustomFeed(next, feed.url, feed.title ?? undefined); } catch { /* skip bad entry */ } }
+    for (const feed of parsed) {
+      try { next = addCustomFeed(next, feed.url, feed.title ?? undefined); } catch { /* skip bad entry */ }
+    }
     persist(next);
   }
   function pickTimer(m: number) { setMinutes(m); saveTimerMinutes(m); }

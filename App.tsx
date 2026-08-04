@@ -10,7 +10,8 @@ import { buildPool } from "./src/platform/feeds";
 import { chooseLineup, resumeNight, type Strategy } from "./src/logic/selection";
 import { getNightAudio } from "./src/specs/NativeNightAudio";
 import { fadeVolume } from "./vendor/player/src/lib/engine";
-import { recordHeardPlay, saveLastNight, loadTimerMinutes } from "./vendor/player/src/lib/store";
+import { recordHeardPlay, saveLastNight, loadTimerMinutes, loadLastNight } from "./vendor/player/src/lib/store";
+import { HEARD_SEC } from "./vendor/player/src/lib/plays";
 import type { Episode } from "./vendor/player/src/lib/engine";
 import SetupScreen from "./src/screens/SetupScreen";
 import PlayerScreen from "./src/screens/PlayerScreen";
@@ -35,11 +36,15 @@ export default function App() {
   const startedAtRef = useRef(0);
   const lineupRef = useRef<Episode[]>([]);
   const variedRef = useRef(false);
+  const nowRef = useRef<Episode | null>(null);
+  const playedIdsRef = useRef<string[]>([]);
+  const feedTitlesRef = useRef<Record<string, string>>({});
 
   useEffect(() => {
     buildPool(nativeFetch)
-      .then(({ pool, errors }) => {
+      .then(({ pool, feedTitles, errors }) => {
         if (!pool.length) throw new Error(errors[0] ?? "no episodes");
+        feedTitlesRef.current = feedTitles;
         setPool(pool);
       })
       .catch((e) => setError(String(e?.message ?? e)));
@@ -55,20 +60,28 @@ export default function App() {
     stopTick();
     endAtRef.current = null;
     getNightAudio()?.stop();
-    if (now) {
+    const ep = nowRef.current;
+    if (ep) {
+      const heardSec = Math.round((Date.now() - startedAtRef.current) / 1000);
+      // The ledger only counts what was actually heard, whether the night
+      // faded out or was stopped by hand.
+      if (heardSec >= HEARD_SEC) {
+        recordHeardPlay({ id: ep.id, title: ep.title, feedId: ep.feedId, startedAt: startedAtRef.current, heardSec });
+      }
+      if (!playedIdsRef.current.includes(ep.id)) playedIdsRef.current = [...playedIdsRef.current, ep.id];
       saveLastNight({
-        pool: lineupRef.current, playedIds: [now.id], feedTitles: {}, artworkByFeedId: {},
-        skipIntroByFeedId: {}, endedVia: via, endedAt: Date.now(), wasVaried: variedRef.current,
+        pool: lineupRef.current, playedIds: playedIdsRef.current,
+        feedTitles: feedTitlesRef.current, artworkByFeedId: {}, skipIntroByFeedId: {},
+        endedVia: via, endedAt: Date.now(), wasVaried: variedRef.current,
       });
     }
-    setPlaying(false);
-    setNow(null);
-    setRemaining(0);
-    setVolume(1);
+    nowRef.current = null;
+    setPlaying(false); setNow(null); setRemaining(0); setVolume(1);
   }
 
   async function beginPlayback(lead: Episode, minutes: number) {
     setNow(lead);
+    nowRef.current = lead;
     startedAtRef.current = Date.now();
     endAtRef.current = Date.now() + minutes * 60_000;
     // Metadata first: it has to be on the MediaItem when playback starts, or
@@ -83,12 +96,6 @@ export default function App() {
       if (end === null) return;
       const left = (end - Date.now()) / 1000;
       if (left <= 0) {
-        // The ledger only counts what was actually heard.
-        recordHeardPlay({
-          id: lead.id, title: lead.title, feedId: lead.feedId,
-          startedAt: startedAtRef.current,
-          heardSec: Math.round((Date.now() - startedAtRef.current) / 1000),
-        });
         await endSession("faded");
         return;
       }
@@ -106,15 +113,18 @@ export default function App() {
     const r = await chooseLineup(strategy, pool);
     if (!r) return;
     lineupRef.current = r.lineup;
+    playedIdsRef.current = [];
     variedRef.current = r.wasVaried;
     await beginPlayback(r.lead, minutes);
   }
 
   async function onResume() {
+    const last = loadLastNight();
     const r = resumeNight(loadTimerMinutes());
-    if (!r) return;
-    lineupRef.current = [r.lead];
-    variedRef.current = false;
+    if (!last || !r) return;
+    lineupRef.current = last.pool;
+    playedIdsRef.current = [...last.playedIds];
+    variedRef.current = last.wasVaried;
     await beginPlayback(r.lead, r.minutes);
   }
 
