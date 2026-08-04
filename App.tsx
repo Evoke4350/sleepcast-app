@@ -8,6 +8,7 @@ import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { installLocalStorage } from "./src/platform/storage";
 import { buildPool } from "./src/platform/feeds";
 import { chooseLineup, resumeNight, type Strategy } from "./src/logic/selection";
+import { saveMarker, loadMarker, clearMarker, reconcileToLastNight } from "./src/logic/nightmarker";
 import { getNightAudio } from "./src/specs/NativeNightAudio";
 import { fadeVolume } from "./vendor/player/src/lib/engine";
 import { recordHeardPlay, saveLastNight, loadTimerMinutes, loadLastNight } from "./vendor/player/src/lib/store";
@@ -39,6 +40,43 @@ export default function App() {
   const nowRef = useRef<Episode | null>(null);
   const playedIdsRef = useRef<string[]>([]);
   const feedTitlesRef = useRef<Record<string, string>>({});
+
+  // If the OS killed the process mid-night, onNightEnded never fired and the
+  // ledger was never written. A marker persisted at play time (see
+  // beginPlayback) survives that death; on the next launch, if native
+  // confirms nothing is currently playing, reconstruct the ledger as if the
+  // night had faded normally so resume-after-fade still works.
+  //
+  // getNightAudio() can return null for a beat after mount (same TurboModule
+  // registration race the onNightEnded-subscription effect below retries
+  // for). Treating "module not ready" as "not playing" would falsely
+  // reconcile a night that is actually still in progress, and the real
+  // onNightEnded that fires moments later would then double-write the
+  // ledger via finishNight. So: retry until the module resolves, and only
+  // ever reconcile on a CONFIRMED not-playing answer. If the module never
+  // resolves within the retry window, we simply don't reconcile — safer to
+  // leave a stale marker for next launch than to guess wrong.
+  useEffect(() => {
+    const marker = loadMarker();
+    if (!marker) return;
+    let id: ReturnType<typeof setInterval> | null = null;
+    let attempts = 0;
+    const tryReconcile = () => {
+      const audio = getNightAudio();
+      if (!audio) return false; // module not ready yet — keep waiting
+      void Promise.resolve(audio.isPlaying?.()).then((playing) => {
+        if (!playing) reconcileToLastNight(marker, Date.now());
+      });
+      return true;
+    };
+    if (!tryReconcile()) {
+      id = setInterval(() => {
+        attempts += 1;
+        if (tryReconcile() || attempts >= 15) { if (id) { clearInterval(id); id = null; } } // ~3s cap
+      }, 200);
+    }
+    return () => { if (id) clearInterval(id); };
+  }, []);
 
   useEffect(() => {
     buildPool(nativeFetch)
@@ -87,6 +125,11 @@ export default function App() {
   function finishNight(ep: Episode | null, heardSec: number, endedVia: "faded" | "abandoned") {
     stopTick();
     endAtRef.current = null;
+    // The night ended cleanly through this function (either onNightEnded or
+    // a manual stop), so the live marker's job is done — clear it before the
+    // process can die in a way that would leave both the marker AND this
+    // ledger write around to be double-reconciled on the next launch.
+    clearMarker();
     if (ep) {
       // The ledger only counts what was actually heard, whether the night
       // faded out or was stopped by hand.
@@ -137,6 +180,14 @@ export default function App() {
     // Native now owns the fade/stop: it keeps running even if the screen
     // locks and JS timers suspend. It reports back via onNightEnded.
     getNightAudio()?.scheduleFadeAndStop(lead.id, minutes * 60, FADE_SECONDS);
+    // Persist a "live night" marker so a killed process can be reconciled on
+    // the next launch (see the mount effect). Cleared by finishNight once
+    // the night ends cleanly through either onNightEnded or a manual stop.
+    saveMarker({
+      episodeId: lead.id, startedAt: startedAtRef.current, timerMinutes: minutes,
+      lineup: lineupRef.current, playedIds: playedIdsRef.current,
+      feedTitles: feedTitlesRef.current, wasVaried: variedRef.current,
+    });
     setPlaying(true);
 
     stopTick();

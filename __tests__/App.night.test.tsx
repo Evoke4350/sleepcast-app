@@ -5,6 +5,10 @@ import TestRenderer, { act } from "react-test-renderer";
 // Real store module (not mocked) so the regression test below can assert on
 // what App actually persisted.
 import { loadLastNight } from "../vendor/player/src/lib/store";
+// Real nightmarker module (not mocked) so the reconcile-on-launch test below
+// can seed a marker exactly as beginPlayback would, and assert it gets
+// cleared exactly as reconcileToLastNight would.
+import { saveMarker, loadMarker } from "../src/logic/nightmarker";
 
 installLocalStorage();
 
@@ -26,6 +30,12 @@ function freshAudio() {
     cancelTimer: jest.fn(function (this: any) { this.calls.push(["cancel"]); }),
     onNightEnded: (h: (e: any) => void) => { endedHandler = h; return { remove() {} }; },
     fireEnded: (e: any) => endedHandler && endedHandler(e),
+    // Defaults to "still playing" so tests above that start a night without
+    // ever ending it (and so leave a real live-night marker behind in the
+    // shared MMKV-backed storage) don't get that marker swept up by a later
+    // test's mount-time reconcile check. Only the reconcile test below
+    // overrides this to false.
+    isPlaying: jest.fn(async () => true),
   };
 }
 // Deterministic pool so we don't hit the network in a unit test. A mutable
@@ -41,6 +51,20 @@ jest.mock("../src/platform/feeds", () => ({
 }));
 
 import App from "../App";
+
+// Several tests below start a night (via beginPlayback) without ever ending
+// it, which writes a real live-night marker into the shared MMKV-backed
+// storage — App.tsx and this test file both import the real (unmocked)
+// storage/nightmarker modules. Without a reset, that marker would still be
+// on disk when the NEXT test mounts a fresh <App/>, and its mount-time
+// reconcile effect would pick up a marker that has nothing to do with that
+// test. Clearing storage before every test, and resetting mockAudio to "no
+// native module" (undefined, matching Jest's real TurboModuleRegistry
+// behavior), keeps each test's marker/ledger state fully self-contained.
+beforeEach(() => {
+  localStorage.clear();
+  mockAudio = undefined;
+});
 
 test("starting shuffle moves from setup to the player screen", async () => {
   let tree!: TestRenderer.ReactTestRenderer;
@@ -115,5 +139,30 @@ test("manual stop cancels the native timer", async () => {
   expect(mockAudio.cancelTimer).toHaveBeenCalled();
   const last = loadLastNight();
   expect(last?.endedVia).toBe("abandoned");
+  act(() => { tree.unmount(); });
+});
+
+// Task 2: if the OS killed the process before onNightEnded could fire, the
+// ledger write never happened, but the live-night marker written at play
+// time (beginPlayback) survived to disk. On the next launch, App's mount
+// effect should notice the marker, confirm with native that nothing is
+// actually playing, and reconcile the marker into lastNight/plays so
+// resume-after-fade still works.
+test("reconciles a killed night's marker on launch when nothing is playing", async () => {
+  mockAudio = freshAudio();
+  mockAudio.isPlaying = jest.fn(async () => false);
+  const lead = { id: "a", title: "A Quiet Night", url: "https://x/a.mp3", feedId: "f", date: "2024-01-01" };
+  mockPoolResult = { pool: [lead], feedTitles: { f: "F" }, errors: [] };
+  saveMarker({
+    episodeId: "a", startedAt: Date.now() - 5 * 60_000, timerMinutes: 5,
+    lineup: [lead], playedIds: [], feedTitles: { f: "F" }, wasVaried: false,
+  });
+  let tree!: TestRenderer.ReactTestRenderer;
+  await act(async () => { tree = TestRenderer.create(<App />); });
+  await act(async () => {}); // let isPlaying() resolve and the reconcile promise chain run
+  const last = loadLastNight();
+  expect(last?.playedIds).toContain("a");
+  expect(last?.endedVia).toBe("faded");
+  expect(loadMarker()).toBeNull();
   act(() => { tree.unmount(); });
 });
