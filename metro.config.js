@@ -6,6 +6,13 @@ const { getDefaultConfig, mergeConfig } = require('@react-native/metro-config');
  *
  * @type {import('@react-native/metro-config').MetroConfig}
  */
-const config = {};
+const defaultConfig = getDefaultConfig(__dirname);
 
-module.exports = mergeConfig(getDefaultConfig(__dirname), config);
+const config = {
+  resolver: {
+    // .onnx (MiniLM model) and .txt (its vocab) ship as bundled assets.
+    assetExts: [...defaultConfig.resolver.assetExts, 'onnx', 'txt'],
+  },
+};
+
+module.exports = mergeConfig(defaultConfig, config);
