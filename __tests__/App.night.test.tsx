@@ -8,8 +8,26 @@ import { loadLastNight } from "../vendor/player/src/lib/store";
 
 installLocalStorage();
 
-// Native audio module is absent under Jest; App must tolerate a null module.
-jest.mock("../src/specs/NativeNightAudio", () => ({ getNightAudio: () => null }));
+// A mutable stub the tests drive. `getNightAudio()` returns whatever
+// `mockAudio` currently points at, so each test can install its own fresh
+// stub (or null, matching Jest's "no native module" reality) before render.
+let mockAudio: any = null;
+jest.mock("../src/specs/NativeNightAudio", () => ({ getNightAudio: () => mockAudio }));
+
+function freshAudio() {
+  let endedHandler: ((e: any) => void) | null = null;
+  return {
+    calls: [] as any[],
+    play: jest.fn(async () => {}),
+    stop: jest.fn(),
+    setVolume: jest.fn(),
+    setNowPlaying: jest.fn(),
+    scheduleFadeAndStop: jest.fn(function (this: any, ...a: any[]) { this.calls.push(["schedule", ...a]); }),
+    cancelTimer: jest.fn(function (this: any) { this.calls.push(["cancel"]); }),
+    onNightEnded: (h: (e: any) => void) => { endedHandler = h; return { remove() {} }; },
+    fireEnded: (e: any) => endedHandler && endedHandler(e),
+  };
+}
 // Deterministic pool so we don't hit the network in a unit test. A mutable
 // module-scope result (babel-plugin-jest-hoist allows out-of-scope idents
 // that start with "mock") lets the error-path test below flip buildPool to
@@ -44,42 +62,58 @@ test("shows the error screen when the pool can't be built", async () => {
   act(() => { tree.unmount(); });
 });
 
-// Regression for the stale-closure bug: endSession used to read the `now`
-// STATE, but the interval created in beginPlayback captured the closure from
-// the render where `now` was still null (setup screen). So on timer-fade,
-// `if (now)` was false and saveLastNight never ran — resume-after-fade
-// silently never worked, even though manual stop (a fresh PlayerScreen
-// closure) looked fine. This drives a real fade-to-zero and checks the
-// ledger that only endSession's "faded" path writes.
-test("resume-after-fade: the fade loop's endSession call saves last night", async () => {
-  mockPoolResult = {
-    pool: [{ id: "a", title: "A Quiet Night", url: "https://x/a.mp3", feedId: "f", date: "2024-01-01" }],
-    feedTitles: { f: "F" }, errors: [],
-  };
-  jest.useFakeTimers();
-  try {
-    let tree!: TestRenderer.ReactTestRenderer;
-    await act(async () => { tree = TestRenderer.create(<App />); });
-    await act(async () => {}); // let buildPool resolve
+// Slice 2: native now owns the fade/stop timer. JS's setInterval no longer
+// writes the ledger on left<=0 (see App.tsx) — it only reflects native's
+// countdown/volume in the UI while foregrounded. These tests replace the old
+// fake-timer "resume-after-fade" regression test above: instead of driving
+// the JS interval to zero, they exercise the real path — scheduling the
+// native timer at play time, and reacting to the native onNightEnded event.
+test("start schedules the native timer with the episode and fade", async () => {
+  mockAudio = freshAudio();
+  mockPoolResult = { pool: [{ id: "a", title: "A Quiet Night", url: "https://x/a.mp3", feedId: "f", date: "2024-01-01" }], feedTitles: { f: "F" }, errors: [] };
+  let tree!: TestRenderer.ReactTestRenderer;
+  await act(async () => { tree = TestRenderer.create(<App />); });
+  await act(async () => {});
+  await act(async () => { tree.root.findByProps({ testID: "timer-5" }).props.onPress(); });
+  await act(async () => { tree.root.findByProps({ testID: "start-shuffle" }).props.onPress(); });
+  expect(mockAudio.scheduleFadeAndStop).toHaveBeenCalledWith("a", 300, 60);
+  act(() => { tree.unmount(); });
+});
 
-    // Shortest available timer (5 min) so the fade-to-zero doesn't require
-    // advancing fake time by an unreasonable amount.
-    await act(async () => { tree.root.findByProps({ testID: "timer-5" }).props.onPress(); });
-    await act(async () => { tree.root.findByProps({ testID: "start-shuffle" }).props.onPress(); });
-    expect(tree.root.findByProps({ testID: "nowPlaying" }).props.children).toBe("A Quiet Night");
+// Regression for the stale-closure bug from slice 1: the bookkeeping used to
+// read the `now` STATE from a stale interval closure, so it silently never
+// ran on fade-to-zero. Now native fires onNightEnded and App's handler reads
+// from refs (nowRef/lineupRef), not the interval, so this proves the ledger
+// gets written even though the JS interval never reaches left<=0 itself.
+test("onNightEnded writes the ledger even though the JS interval never fired", async () => {
+  mockAudio = freshAudio();
+  mockPoolResult = { pool: [{ id: "a", title: "A Quiet Night", url: "https://x/a.mp3", feedId: "f", date: "2024-01-01" }], feedTitles: { f: "F" }, errors: [] };
+  let tree!: TestRenderer.ReactTestRenderer;
+  await act(async () => { tree = TestRenderer.create(<App />); });
+  await act(async () => {});
+  await act(async () => { tree.root.findByProps({ testID: "timer-5" }).props.onPress(); });
+  await act(async () => { tree.root.findByProps({ testID: "start-shuffle" }).props.onPress(); });
+  await act(async () => { mockAudio.fireEnded({ episodeId: "a", heardSeconds: 300 }); });
+  const last = loadLastNight();
+  expect(last?.playedIds).toContain("a");
+  expect(last?.endedVia).toBe("faded");
+  act(() => { tree.unmount(); });
+});
 
-    // Past the 5-minute timer: the interval's `left <= 0` branch fires and
-    // calls endSession("faded"). advanceTimersByTimeAsync (not the sync
-    // variant) lets the interval's own microtasks resolve between ticks.
-    await act(async () => { await jest.advanceTimersByTimeAsync(301_000); });
-
-    const last = loadLastNight();
-    expect(last).not.toBeNull();
-    expect(last?.playedIds).toContain("a");
-    expect(last?.endedVia).toBe("faded");
-
-    act(() => { tree.unmount(); });
-  } finally {
-    jest.useRealTimers();
-  }
+// Manual stop goes through the same finishNight() bookkeeping onNightEnded
+// uses, just with endedVia "abandoned" instead of "faded" — asserting on the
+// saved ledger here (not just cancelTimer) covers that shared path.
+test("manual stop cancels the native timer", async () => {
+  mockAudio = freshAudio();
+  mockPoolResult = { pool: [{ id: "a", title: "A Quiet Night", url: "https://x/a.mp3", feedId: "f", date: "2024-01-01" }], feedTitles: { f: "F" }, errors: [] };
+  let tree!: TestRenderer.ReactTestRenderer;
+  await act(async () => { tree = TestRenderer.create(<App />); });
+  await act(async () => {});
+  await act(async () => { tree.root.findByProps({ testID: "timer-5" }).props.onPress(); });
+  await act(async () => { tree.root.findByProps({ testID: "start-shuffle" }).props.onPress(); });
+  await act(async () => { tree.root.findByProps({ testID: "stop" }).props.onPress(); });
+  expect(mockAudio.cancelTimer).toHaveBeenCalled();
+  const last = loadLastNight();
+  expect(last?.endedVia).toBe("abandoned");
+  act(() => { tree.unmount(); });
 });

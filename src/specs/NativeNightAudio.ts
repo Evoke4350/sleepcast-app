@@ -1,5 +1,11 @@
 import type { TurboModule } from "react-native";
 import { TurboModuleRegistry } from "react-native";
+import type { EventEmitter } from "react-native/Libraries/Types/CodegenTypes";
+
+export interface NightEndedEvent {
+  episodeId: string;
+  heardSeconds: number;
+}
 
 // Deliberately small. The app needs to play a URL, set a volume, keep playing
 // while backgrounded, and publish Now Playing information. It does not need a
@@ -27,6 +33,14 @@ export interface Spec extends TurboModule {
   setNowPlaying(title: string, artist: string, artworkUrl: string, durationSeconds: number): void;
   /** True while the player is actually producing audio. */
   isPlaying(): Promise<boolean>;
+  /** Start the authoritative sleep timer. Native fades volume over the final
+   *  fadeSeconds and stops at durationSeconds, whether or not JS is awake.
+   *  Call once, right after play(). */
+  scheduleFadeAndStop(episodeId: string, durationSeconds: number, fadeSeconds: number): void;
+  /** Cancel a running timer (manual stop, or starting a new night). */
+  cancelTimer(): void;
+  /** Fires once when the native timer reaches zero and stops playback. */
+  readonly onNightEnded: EventEmitter<NightEndedEvent>;
 }
 
 // Resolved lazily, on first use, and NOT at module scope.
