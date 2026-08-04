@@ -29,3 +29,18 @@ jest.mock(
   // interop'd, not a namespace import.
   () => require('react-native-safe-area-context/jest/mock.tsx').default,
 );
+
+// Install localStorage polyfill after mocks are set up, so that shared player
+// code can use it synchronously without async setup.
+// Jest's React Native preset provides an empty localStorage, so delete it first.
+const { installLocalStorage } = require('./src/platform/storage');
+delete global.localStorage;
+installLocalStorage();
+
+// Clear localStorage before each test to isolate test state and cache.
+beforeEach(() => {
+  if (global.localStorage) {
+    global.localStorage.clear();
+  }
+});
+

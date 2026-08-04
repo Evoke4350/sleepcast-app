@@ -1,37 +1,30 @@
 import React, { useEffect, useRef, useState } from "react";
-import {
-  ActivityIndicator, StatusBar, StyleSheet, Text, TouchableOpacity, View,
-} from "react-native";
+import { ActivityIndicator, StatusBar, StyleSheet, Text, View } from "react-native";
 // Not react-native's SafeAreaView, which is deprecated in 0.86 and warns on
 // every render. react-native-safe-area-context was already a dependency here;
 // the import was simply pointing at the wrong one.
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 
 import { installLocalStorage } from "./src/platform/storage";
-import { parseFeed } from "./src/platform/feed";
+import { buildPool } from "./src/platform/feeds";
+import { chooseLineup, resumeNight, type Strategy } from "./src/logic/selection";
 import { getNightAudio } from "./src/specs/NativeNightAudio";
-import { TurboModuleRegistry, NativeModules } from "react-native";
-import { fadeVolume, formatTime } from "./vendor/player/src/lib/engine";
-import { pickNextEpisode } from "./vendor/player/src/lib/plays";
-import { getPlays, recordHeardPlay } from "./vendor/player/src/lib/store";
+import { fadeVolume } from "./vendor/player/src/lib/engine";
+import { recordHeardPlay, saveLastNight, loadTimerMinutes, loadLastNight } from "./vendor/player/src/lib/store";
+import { HEARD_SEC } from "./vendor/player/src/lib/plays";
 import type { Episode } from "./vendor/player/src/lib/engine";
+import SetupScreen from "./src/screens/SetupScreen";
+import PlayerScreen from "./src/screens/PlayerScreen";
 
 // Must run before anything touches the shared code, which reads localStorage
 // synchronously at module scope in places.
 installLocalStorage();
 
-
-// No relay. A native HTTP client has no CORS, so the whole SSRF-guarded proxy
-// the web app needs simply does not exist here — this is one of the three
-// reasons the native version is worth building.
-const FEED_URL = "https://feed.sleepwithmepodcast.com/";
-const FEED_ID = "swm";
 const FADE_SECONDS = 60;
-
-const TIMERS = [1, 5, 45];
+const nativeFetch = (url: string) => fetch(url).then((r) => r.text());
 
 export default function App() {
-  const [pool, setPool] = useState<Episode[]>([]);
+  const [pool, setPool] = useState<Episode[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [now, setNow] = useState<Episode | null>(null);
   const [remaining, setRemaining] = useState(0);
@@ -41,14 +34,18 @@ export default function App() {
   const endAtRef = useRef<number | null>(null);
   const tickRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const startedAtRef = useRef(0);
+  const lineupRef = useRef<Episode[]>([]);
+  const variedRef = useRef(false);
+  const nowRef = useRef<Episode | null>(null);
+  const playedIdsRef = useRef<string[]>([]);
+  const feedTitlesRef = useRef<Record<string, string>>({});
 
   useEffect(() => {
-    fetch(FEED_URL)
-      .then((r) => r.text())
-      .then((xml) => {
-        const feed = parseFeed(xml, FEED_ID);
-        if (feed.episodes.length === 0) throw new Error("feed had no episodes");
-        setPool(feed.episodes);
+    buildPool(nativeFetch)
+      .then(({ pool: builtPool, feedTitles, errors }) => {
+        if (!builtPool.length) throw new Error(errors[0] ?? "no episodes");
+        feedTitlesRef.current = feedTitles;
+        setPool(builtPool);
       })
       .catch((e) => setError(String(e?.message ?? e)));
     return () => stopTick();
@@ -59,26 +56,38 @@ export default function App() {
     tickRef.current = null;
   }
 
-  async function endSession() {
+  async function endSession(via: "faded" | "abandoned") {
     stopTick();
     endAtRef.current = null;
     getNightAudio()?.stop();
-    setPlaying(false);
-    setNow(null);
-    setRemaining(0);
-    setVolume(1);
+    const ep = nowRef.current;
+    if (ep) {
+      const heardSec = Math.round((Date.now() - startedAtRef.current) / 1000);
+      // The ledger only counts what was actually heard, whether the night
+      // faded out or was stopped by hand.
+      if (heardSec >= HEARD_SEC) {
+        recordHeardPlay({ id: ep.id, title: ep.title, feedId: ep.feedId, startedAt: startedAtRef.current, heardSec });
+      }
+      if (!playedIdsRef.current.includes(ep.id)) playedIdsRef.current = [...playedIdsRef.current, ep.id];
+      saveLastNight({
+        pool: lineupRef.current, playedIds: playedIdsRef.current,
+        feedTitles: feedTitlesRef.current, artworkByFeedId: {}, skipIntroByFeedId: {},
+        endedVia: via, endedAt: Date.now(), wasVaried: variedRef.current,
+      });
+    }
+    nowRef.current = null;
+    setPlaying(false); setNow(null); setRemaining(0); setVolume(1);
   }
 
-  async function startNight(minutes: number) {
-    const ep = pickNextEpisode(pool, getPlays());
-    if (!ep) return;
-    setNow(ep);
+  async function beginPlayback(lead: Episode, minutes: number) {
+    setNow(lead);
+    nowRef.current = lead;
     startedAtRef.current = Date.now();
     endAtRef.current = Date.now() + minutes * 60_000;
     // Metadata first: it has to be on the MediaItem when playback starts, or
     // the lock screen shows nothing and setting it later restarts the audio.
-    getNightAudio()?.setNowPlaying(ep.title, "sleepcast", "", 0);
-    await getNightAudio()?.play(ep.url, 0);
+    getNightAudio()?.setNowPlaying(lead.title, "sleepcast", "", 0);
+    await getNightAudio()?.play(lead.url, 0);
     setPlaying(true);
 
     stopTick();
@@ -87,13 +96,7 @@ export default function App() {
       if (end === null) return;
       const left = (end - Date.now()) / 1000;
       if (left <= 0) {
-        // The ledger only counts what was actually heard.
-        recordHeardPlay({
-          id: ep.id, title: ep.title, feedId: ep.feedId,
-          startedAt: startedAtRef.current,
-          heardSec: Math.round((Date.now() - startedAtRef.current) / 1000),
-        });
-        await endSession();
+        await endSession("faded");
         return;
       }
       // The same fade curve the web player uses, from the shared repo. The
@@ -105,53 +108,42 @@ export default function App() {
     }, 1000);
   }
 
+  async function onStart(strategy: Strategy, minutes: number) {
+    if (!pool) return;
+    const r = await chooseLineup(strategy, pool);
+    if (!r) return;
+    lineupRef.current = r.lineup;
+    playedIdsRef.current = [];
+    variedRef.current = r.wasVaried;
+    await beginPlayback(r.lead, minutes);
+  }
+
+  async function onResume() {
+    const last = loadLastNight();
+    const r = resumeNight(loadTimerMinutes());
+    if (!last || !r) return;
+    lineupRef.current = last.pool;
+    playedIdsRef.current = [...last.playedIds];
+    variedRef.current = last.wasVaried;
+    await beginPlayback(r.lead, r.minutes);
+  }
+
   return (
     <SafeAreaProvider>
       <SafeAreaView style={s.root}>
         <StatusBar barStyle="light-content" backgroundColor="#050508" />
-        <View style={s.body}>
-          {error ? (
-            <Text style={s.err} testID="error">{error}</Text>
-          ) : pool.length === 0 ? (
-            <>
-              <ActivityIndicator color="#6e5d44" />
-              <Text style={s.dim} testID="status">gathering episodes…</Text>
-            </>
-          ) : !playing ? (
-            <>
-              <Text style={s.dim} testID="pool">{pool.length} episodes ready</Text>
-              <Text style={s.dim} testID="audioStatus">
-                {getNightAudio() ? "audio: native module linked" : "audio: NOT LINKED (silent run)"}
-              </Text>
-              <Text style={s.dim} testID="diag">
-                {/* globalThis, not global: `global` is a Node type this project
-                    does not pull in (no @types/node), so it was the one thing
-                    failing `tsc --noEmit`. Same object at runtime under Hermes. */}
-                {`proxy:${typeof (globalThis as any).__turboModuleProxy} ` +
-                 `core:${TurboModuleRegistry.get("PlatformConstants") ? "ok" : "null"} ` +
-                 `nm:${Object.keys(NativeModules).length} ` +
-                 `mine:${TurboModuleRegistry.get("NightAudio") ? "ok" : "null"}`}
-              </Text>
-              <View style={s.row}>
-                {TIMERS.map((m) => (
-                  <TouchableOpacity key={m} style={s.btn} testID={`start-${m}`} onPress={() => startNight(m)}>
-                    <Text style={s.btnText}>{m} min</Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </>
-          ) : (
-            <>
-              <Text style={s.moon}>☾</Text>
-              <Text style={s.title} testID="nowPlaying" numberOfLines={2}>{now?.title}</Text>
-              <Text style={s.dim} testID="countdown">{formatTime(remaining)}</Text>
-              <Text style={s.dim} testID="volume">vol {volume.toFixed(2)}</Text>
-              <TouchableOpacity style={s.btn} testID="stop" onPress={endSession}>
-                <Text style={s.btnText}>stop</Text>
-              </TouchableOpacity>
-            </>
-          )}
-        </View>
+        {error ? (
+          <View style={s.center}><Text style={s.err} testID="error">{error}</Text></View>
+        ) : pool === null ? (
+          <View style={s.center}>
+            <ActivityIndicator color="#6e5d44" />
+            <Text style={s.dim} testID="status">gathering episodes…</Text>
+          </View>
+        ) : playing && now ? (
+          <PlayerScreen title={now.title} remaining={remaining} volume={volume} onStop={() => endSession("abandoned")} />
+        ) : (
+          <SetupScreen onStart={onStart} onResume={onResume} resumeAvailable={!!resumeNight(loadTimerMinutes())} />
+        )}
       </SafeAreaView>
     </SafeAreaProvider>
   );
@@ -159,12 +151,7 @@ export default function App() {
 
 const s = StyleSheet.create({
   root: { flex: 1, backgroundColor: "#050508" },
-  body: { flex: 1, alignItems: "center", justifyContent: "center", gap: 18, padding: 24 },
-  row: { flexDirection: "row", gap: 12 },
-  moon: { fontSize: 56, color: "#f0dcb8" },
-  title: { color: "#c8c0b0", fontSize: 16, textAlign: "center" },
+  center: { flex: 1, alignItems: "center", justifyContent: "center", gap: 18, padding: 24 },
   dim: { color: "#6e5d44", fontSize: 13 },
   err: { color: "#b3746b", fontSize: 13, textAlign: "center" },
-  btn: { borderWidth: 1, borderColor: "#3a3325", borderRadius: 999, paddingHorizontal: 20, paddingVertical: 10 },
-  btnText: { color: "#d9c9a8", fontSize: 14 },
 });
