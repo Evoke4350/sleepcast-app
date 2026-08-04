@@ -11,8 +11,11 @@ module.exports = {
   // react-native-mmkv (and its nitro peer) ship ESM. The preset's default list
   // transforms only react-native and @react-native packages, so importing MMKV
   // died on `export { createMMKV }` before any test could run.
+  // react-native-safe-area-context is here for a different reason than the
+  // rest: its jest mock ships as .tsx, inside node_modules, so it needs the
+  // transform even though the package itself would not.
   transformIgnorePatterns: [
-    'node_modules/(?!((jest-)?react-native|react-native-mmkv|react-native-nitro-modules|@react-native(-community)?)/)',
+    'node_modules/(?!((jest-)?react-native|react-native-mmkv|react-native-nitro-modules|react-native-safe-area-context|@react-native(-community)?)/)',
   ],
 
   // Deliberately setupFilesAfterEnv, not setupFiles: the preset owns

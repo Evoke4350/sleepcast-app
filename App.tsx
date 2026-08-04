@@ -1,7 +1,11 @@
 import React, { useEffect, useRef, useState } from "react";
 import {
-  ActivityIndicator, SafeAreaView, StatusBar, StyleSheet, Text, TouchableOpacity, View,
+  ActivityIndicator, StatusBar, StyleSheet, Text, TouchableOpacity, View,
 } from "react-native";
+// Not react-native's SafeAreaView, which is deprecated in 0.86 and warns on
+// every render. react-native-safe-area-context was already a dependency here;
+// the import was simply pointing at the wrong one.
+import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 
 import { installLocalStorage } from "./src/platform/storage";
 import { parseFeed } from "./src/platform/feed";
@@ -102,52 +106,54 @@ export default function App() {
   }
 
   return (
-    <SafeAreaView style={s.root}>
-      <StatusBar barStyle="light-content" backgroundColor="#050508" />
-      <View style={s.body}>
-        {error ? (
-          <Text style={s.err} testID="error">{error}</Text>
-        ) : pool.length === 0 ? (
-          <>
-            <ActivityIndicator color="#6e5d44" />
-            <Text style={s.dim} testID="status">gathering episodes…</Text>
-          </>
-        ) : !playing ? (
-          <>
-            <Text style={s.dim} testID="pool">{pool.length} episodes ready</Text>
-            <Text style={s.dim} testID="audioStatus">
-              {getNightAudio() ? "audio: native module linked" : "audio: NOT LINKED (silent run)"}
-            </Text>
-            <Text style={s.dim} testID="diag">
-              {/* globalThis, not global: `global` is a Node type this project
-                  does not pull in (no @types/node), so it was the one thing
-                  failing `tsc --noEmit`. Same object at runtime under Hermes. */}
-              {`proxy:${typeof (globalThis as any).__turboModuleProxy} ` +
-               `core:${TurboModuleRegistry.get("PlatformConstants") ? "ok" : "null"} ` +
-               `nm:${Object.keys(NativeModules).length} ` +
-               `mine:${TurboModuleRegistry.get("NightAudio") ? "ok" : "null"}`}
-            </Text>
-            <View style={s.row}>
-              {TIMERS.map((m) => (
-                <TouchableOpacity key={m} style={s.btn} testID={`start-${m}`} onPress={() => startNight(m)}>
-                  <Text style={s.btnText}>{m} min</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          </>
-        ) : (
-          <>
-            <Text style={s.moon}>☾</Text>
-            <Text style={s.title} testID="nowPlaying" numberOfLines={2}>{now?.title}</Text>
-            <Text style={s.dim} testID="countdown">{formatTime(remaining)}</Text>
-            <Text style={s.dim} testID="volume">vol {volume.toFixed(2)}</Text>
-            <TouchableOpacity style={s.btn} testID="stop" onPress={endSession}>
-              <Text style={s.btnText}>stop</Text>
-            </TouchableOpacity>
-          </>
-        )}
-      </View>
-    </SafeAreaView>
+    <SafeAreaProvider>
+      <SafeAreaView style={s.root}>
+        <StatusBar barStyle="light-content" backgroundColor="#050508" />
+        <View style={s.body}>
+          {error ? (
+            <Text style={s.err} testID="error">{error}</Text>
+          ) : pool.length === 0 ? (
+            <>
+              <ActivityIndicator color="#6e5d44" />
+              <Text style={s.dim} testID="status">gathering episodes…</Text>
+            </>
+          ) : !playing ? (
+            <>
+              <Text style={s.dim} testID="pool">{pool.length} episodes ready</Text>
+              <Text style={s.dim} testID="audioStatus">
+                {getNightAudio() ? "audio: native module linked" : "audio: NOT LINKED (silent run)"}
+              </Text>
+              <Text style={s.dim} testID="diag">
+                {/* globalThis, not global: `global` is a Node type this project
+                    does not pull in (no @types/node), so it was the one thing
+                    failing `tsc --noEmit`. Same object at runtime under Hermes. */}
+                {`proxy:${typeof (globalThis as any).__turboModuleProxy} ` +
+                 `core:${TurboModuleRegistry.get("PlatformConstants") ? "ok" : "null"} ` +
+                 `nm:${Object.keys(NativeModules).length} ` +
+                 `mine:${TurboModuleRegistry.get("NightAudio") ? "ok" : "null"}`}
+              </Text>
+              <View style={s.row}>
+                {TIMERS.map((m) => (
+                  <TouchableOpacity key={m} style={s.btn} testID={`start-${m}`} onPress={() => startNight(m)}>
+                    <Text style={s.btnText}>{m} min</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </>
+          ) : (
+            <>
+              <Text style={s.moon}>☾</Text>
+              <Text style={s.title} testID="nowPlaying" numberOfLines={2}>{now?.title}</Text>
+              <Text style={s.dim} testID="countdown">{formatTime(remaining)}</Text>
+              <Text style={s.dim} testID="volume">vol {volume.toFixed(2)}</Text>
+              <TouchableOpacity style={s.btn} testID="stop" onPress={endSession}>
+                <Text style={s.btnText}>stop</Text>
+              </TouchableOpacity>
+            </>
+          )}
+        </View>
+      </SafeAreaView>
+    </SafeAreaProvider>
   );
 }
 

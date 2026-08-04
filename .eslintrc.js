@@ -8,4 +8,15 @@ module.exports = {
   // linting it from here produced 9 errors nobody in this repo may act on,
   // against 0 in the app's own code.
   ignorePatterns: ['vendor/', 'node_modules/', 'android/', 'ios/'],
+
+  overrides: [
+    {
+      // jest.setup.js runs inside the test environment, where `jest` is a
+      // global. Lint treats the repo root as ordinary Node source and reported
+      // it as undefined — two errors that made `npm run lint` fail on a fresh
+      // clone with nothing actually wrong.
+      files: ['jest.setup.js', 'jest.config.js', '**/*.test.ts', '**/*.test.tsx'],
+      env: {jest: true, node: true},
+    },
+  ],
 };
