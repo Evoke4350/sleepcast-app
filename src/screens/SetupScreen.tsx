@@ -3,7 +3,7 @@ import { ScrollView, View, Text, TextInput, TouchableOpacity, Switch, StyleSheet
 import {
   loadState, saveState, addCustomFeed, removeCustomFeed, saveTimerMinutes,
 } from "../../vendor/player/src/lib/store";
-import { parseOpml, buildOpml } from "../../vendor/player/src/lib/opml";
+import { parseOpml, buildOpml } from "../platform/opml";
 import type { AppState } from "../../vendor/player/src/lib/store";
 
 const TIMERS = [1, 5, 45, 60];
