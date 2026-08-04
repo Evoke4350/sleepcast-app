@@ -31,7 +31,7 @@ Replace the thin slice's single hardcoded fetch with a pool built from every ena
 - Test: `src/platform/feeds.test.ts`
 
 **Interfaces:**
-- Consumes: `loadState` (`vendor/player/src/lib/store`) → `{ feeds: FeedRef[] }`; `cacheFeedXml(feedId, xml)`, `getCachedFeedXml(feedId)` (same module); `parseFeedXml(xml, feedId)` (`vendor/player/src/lib/engine`) → `Feed { id, title, episodes: Episode[] }`.
+- Consumes: `loadState` (`vendor/player/src/lib/store`) → `{ feeds: FeedRef[] }`; `cacheFeedXml(feedId, xml)`, `getCachedFeedXml(feedId)` (same module); `parseFeed(xml, feedId)` (`src/platform/feed.ts` — the native fast-xml-parser, NOT vendor `parseFeedXml`, which needs DOMParser and does not run on RN) → `Feed { id, title, episodes: Episode[] }`.
 - Produces:
   ```ts
   type XmlFetcher = (url: string) => Promise<string>;
@@ -108,7 +108,7 @@ Expected: FAIL — `buildPool is not a function` / module not found.
 ```ts
 // src/platform/feeds.ts
 import type { Episode } from "../../vendor/player/src/lib/engine";
-import { parseFeedXml } from "../../vendor/player/src/lib/engine";
+import { parseFeed } from "./feed"; // native fast-xml-parser; vendor parseFeedXml needs DOMParser
 import { loadState, cacheFeedXml, getCachedFeedXml } from "../../vendor/player/src/lib/store";
 
 export type XmlFetcher = (url: string) => Promise<string>;
@@ -139,7 +139,7 @@ export async function buildPool(fetchXml: XmlFetcher): Promise<PoolResult> {
         return;
       }
       try {
-        const feed = parseFeedXml(xml, f.id);
+        const feed = parseFeed(xml, f.id);
         feedTitles[f.id] = feed.title || f.title;
         pool.push(...feed.episodes);
       } catch (e) {

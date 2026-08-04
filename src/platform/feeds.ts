@@ -1,5 +1,5 @@
 import type { Episode } from "../../vendor/player/src/lib/engine";
-import { parseFeedXml } from "../../vendor/player/src/lib/engine";
+import { parseFeed } from "./feed";
 import { loadState, cacheFeedXml, getCachedFeedXml } from "../../vendor/player/src/lib/store";
 
 export type XmlFetcher = (url: string) => Promise<string>;
@@ -30,7 +30,7 @@ export async function buildPool(fetchXml: XmlFetcher): Promise<PoolResult> {
         return;
       }
       try {
-        const feed = parseFeedXml(xml, f.id);
+        const feed = parseFeed(xml, f.id);
         feedTitles[f.id] = feed.title || f.title;
         pool.push(...feed.episodes);
       } catch (e) {
