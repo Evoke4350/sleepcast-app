@@ -41,3 +41,12 @@ test("the nights link fires onOpenRest", () => {
   act(() => { tree.root.findByProps({ testID: "open-rest" }).props.onPress(); });
   expect(onOpenRest).toHaveBeenCalled();
 });
+
+test("stepping a feed's trim up persists via nextTrim", () => {
+  let tree!: TestRenderer.ReactTestRenderer;
+  act(() => { tree = TestRenderer.create(<SetupScreen onStart={() => {}} />); });
+  // built-in "swm" starts at 1.0; one step up → 1.25
+  act(() => { find(tree, "trim-up-swm").props.onPress(); });
+  expect(loadState().settings.feedTrim.swm).toBe(1.25);
+  expect(find(tree, "trim-value-swm").props.children).toContain("1.25");
+});
