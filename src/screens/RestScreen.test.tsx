@@ -24,6 +24,22 @@ test("shows the drifted-off count from the ledger", () => {
   expect(tree.root.findByProps({ testID: "rest-nights" }).props.children).toBe(1);
 });
 
+test("'no' tightens even when params were never seeded (real-device path)", () => {
+  localStorage.clear();
+  // NOT seeding params — the real first-run state. A scored night only.
+  appendNight({
+    startedAt: 2000, timerMinutes: 45, endedVia: "faded",
+    sleptAtMs: 8 * 60_000, timeToSleepMs: 8 * 60_000, interactions: 2, detector: "inference",
+  });
+  expect(loadParams()).toBeNull();
+  let tree!: TestRenderer.ReactTestRenderer;
+  act(() => { tree = TestRenderer.create(<RestScreen onClose={() => {}} />); });
+  act(() => { tree.root.findByProps({ testID: "rest-label-no" }).props.onPress(); });
+  const p = loadParams();
+  expect(p).not.toBeNull();
+  expect(p!.alpha).toBeLessThan(DEFAULT_PARAMS.alpha); // history-derived then tightened
+});
+
 test("answering 'no' to a scored night tightens the detector", () => {
   localStorage.clear();
   seedSleptNight();

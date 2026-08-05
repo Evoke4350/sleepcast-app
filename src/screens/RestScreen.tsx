@@ -1,7 +1,7 @@
 import React, { useMemo } from "react";
 import { ScrollView, View, Text, TouchableOpacity, StyleSheet } from "react-native";
 import { loadNights, rollup, setSelfLabel, loadParams, saveParams } from "../../vendor/player/src/lib/rest/ledger";
-import { tightenAfterFalsePositive } from "../../vendor/player/src/lib/rest/calibrate";
+import { tightenAfterFalsePositive, paramsFromHistory } from "../../vendor/player/src/lib/rest/calibrate";
 import { fmtDuration, lastNight } from "../../vendor/player/src/lib/rest/surface";
 import { getPlays } from "../../vendor/player/src/lib/store";
 import { playsSince, playAtMoment } from "../../vendor/player/src/lib/plays";
@@ -20,8 +20,12 @@ export default function RestScreen({ onClose }: { onClose: () => void }) {
     if (!last) return;
     setSelfLabel(last.startedAt, kind);
     if (kind === "awake" && last.sleptAtMs !== null) {
-      const p = loadParams();
-      if (p) saveParams(tightenAfterFalsePositive(p));
+      // A "no" on a scored night is a confirmed false positive. Params are not
+      // seeded until the first calibration, so fall back to history-derived
+      // params — otherwise the very tightening this button exists for never
+      // happens (loadParams() stays null on a real device).
+      const p = loadParams() ?? paramsFromHistory(loadNights());
+      saveParams(tightenAfterFalsePositive(p));
     }
     onClose();
   }
