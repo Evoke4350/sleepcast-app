@@ -8,6 +8,7 @@ import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { installLocalStorage } from "./src/platform/storage";
 import { buildPool } from "./src/platform/feeds";
 import { chooseLineup, resumeNight, type Strategy } from "./src/logic/selection";
+import { saveMarker, loadMarker, clearMarker, reconcileToLastNight } from "./src/logic/nightmarker";
 import { getNightAudio } from "./src/specs/NativeNightAudio";
 import { fadeVolume } from "./vendor/player/src/lib/engine";
 import { recordHeardPlay, saveLastNight, loadTimerMinutes, loadLastNight } from "./vendor/player/src/lib/store";
@@ -40,6 +41,43 @@ export default function App() {
   const playedIdsRef = useRef<string[]>([]);
   const feedTitlesRef = useRef<Record<string, string>>({});
 
+  // If the OS killed the process mid-night, onNightEnded never fired and the
+  // ledger was never written. A marker persisted at play time (see
+  // beginPlayback) survives that death; on the next launch, if native
+  // confirms nothing is currently playing, reconstruct the ledger as if the
+  // night had faded normally so resume-after-fade still works.
+  //
+  // getNightAudio() can return null for a beat after mount (same TurboModule
+  // registration race the onNightEnded-subscription effect below retries
+  // for). Treating "module not ready" as "not playing" would falsely
+  // reconcile a night that is actually still in progress, and the real
+  // onNightEnded that fires moments later would then double-write the
+  // ledger via finishNight. So: retry until the module resolves, and only
+  // ever reconcile on a CONFIRMED not-playing answer. If the module never
+  // resolves within the retry window, we simply don't reconcile — safer to
+  // leave a stale marker for next launch than to guess wrong.
+  useEffect(() => {
+    const marker = loadMarker();
+    if (!marker) return;
+    let id: ReturnType<typeof setInterval> | null = null;
+    let attempts = 0;
+    const tryReconcile = () => {
+      const audio = getNightAudio();
+      if (!audio) return false; // module not ready yet — keep waiting
+      void Promise.resolve(audio.isPlaying?.()).then((playing) => {
+        if (!playing) reconcileToLastNight(marker, Date.now());
+      });
+      return true;
+    };
+    if (!tryReconcile()) {
+      id = setInterval(() => {
+        attempts += 1;
+        if (tryReconcile() || attempts >= 15) { if (id) { clearInterval(id); id = null; } } // ~3s cap
+      }, 200);
+    }
+    return () => { if (id) clearInterval(id); };
+  }, []);
+
   useEffect(() => {
     buildPool(nativeFetch)
       .then(({ pool: builtPool, feedTitles, errors }) => {
@@ -51,18 +89,48 @@ export default function App() {
     return () => stopTick();
   }, []);
 
+  // Native is authoritative now: it runs the fade/stop timer even while JS is
+  // suspended (screen locked), then tells us it happened. This is where the
+  // ledger bookkeeping actually lives.
+  //
+  // getNightAudio() can return null for a beat after mount if the TurboModule
+  // registry isn't ready yet (see NativeNightAudio.ts's own comment on lazy
+  // resolution). A one-shot subscribe attempt would permanently miss
+  // onNightEnded in that case, so retry on a short interval until it lands.
+  useEffect(() => {
+    let sub: { remove?: () => void } | undefined;
+    let id: ReturnType<typeof setInterval> | null = null;
+    const trySubscribe = () => {
+      const audio = getNightAudio();
+      if (!audio) return false;
+      sub = audio.onNightEnded((e) => { void onNightEnded(e.episodeId, e.heardSeconds); });
+      return true;
+    };
+    if (!trySubscribe()) {
+      id = setInterval(() => { if (trySubscribe() && id) { clearInterval(id); id = null; } }, 200);
+    }
+    return () => { if (id) clearInterval(id); sub?.remove?.(); };
+  }, []);
+
   function stopTick() {
     if (tickRef.current !== null) clearInterval(tickRef.current);
     tickRef.current = null;
   }
 
-  async function endSession(via: "faded" | "abandoned") {
+  // The single place that writes the "a night ended" ledger entry, shared by
+  // both ways a night can end: native's onNightEnded (faded) and a manual
+  // stop (abandoned). Keeping this in one function means the record-heard →
+  // append-playedIds → save-last-night → reset-state sequence can't drift
+  // between the two callers.
+  function finishNight(ep: Episode | null, heardSec: number, endedVia: "faded" | "abandoned") {
     stopTick();
     endAtRef.current = null;
-    getNightAudio()?.stop();
-    const ep = nowRef.current;
+    // The night ended cleanly through this function (either onNightEnded or
+    // a manual stop), so the live marker's job is done — clear it before the
+    // process can die in a way that would leave both the marker AND this
+    // ledger write around to be double-reconciled on the next launch.
+    clearMarker();
     if (ep) {
-      const heardSec = Math.round((Date.now() - startedAtRef.current) / 1000);
       // The ledger only counts what was actually heard, whether the night
       // faded out or was stopped by hand.
       if (heardSec >= HEARD_SEC) {
@@ -72,11 +140,31 @@ export default function App() {
       saveLastNight({
         pool: lineupRef.current, playedIds: playedIdsRef.current,
         feedTitles: feedTitlesRef.current, artworkByFeedId: {}, skipIntroByFeedId: {},
-        endedVia: via, endedAt: Date.now(), wasVaried: variedRef.current,
+        endedVia, endedAt: Date.now(), wasVaried: variedRef.current,
       });
     }
     nowRef.current = null;
     setPlaying(false); setNow(null); setRemaining(0); setVolume(1);
+  }
+
+  async function endSession() {
+    getNightAudio()?.cancelTimer();
+    getNightAudio()?.stop();
+    const heardSec = Math.round((Date.now() - startedAtRef.current) / 1000);
+    finishNight(nowRef.current, heardSec, "abandoned");
+  }
+
+  // The bookkeeping that used to live in the JS interval's left<=0 branch.
+  // Now it's triggered by native's onNightEnded event, so it runs whether or
+  // not JS was awake when the timer actually reached zero.
+  async function onNightEnded(episodeId: string, heardSeconds: number) {
+    // No live night in THIS JS instance (e.g. JS reloaded under a surviving
+    // native timer): bail before finishNight can clear the reconcile marker
+    // while writing nothing — the marker is the only remaining record of the
+    // night, and the next-launch reconcile will turn it into the ledger entry.
+    if (endAtRef.current === null) return;
+    const ep = nowRef.current; // single-lead night: the current episode is the one that ended
+    finishNight(ep, heardSeconds, "faded");
   }
 
   async function beginPlayback(lead: Episode, minutes: number) {
@@ -88,22 +176,29 @@ export default function App() {
     // the lock screen shows nothing and setting it later restarts the audio.
     getNightAudio()?.setNowPlaying(lead.title, "sleepcast", "", 0);
     await getNightAudio()?.play(lead.url, 0);
+    // Native now owns the fade/stop: it keeps running even if the screen
+    // locks and JS timers suspend. It reports back via onNightEnded.
+    getNightAudio()?.scheduleFadeAndStop(lead.id, minutes * 60, FADE_SECONDS);
+    // Persist a "live night" marker so a killed process can be reconciled on
+    // the next launch (see the mount effect). Cleared by finishNight once
+    // the night ends cleanly through either onNightEnded or a manual stop.
+    saveMarker({
+      episodeId: lead.id, startedAt: startedAtRef.current, timerMinutes: minutes,
+      lineup: lineupRef.current, playedIds: playedIdsRef.current,
+      feedTitles: feedTitlesRef.current, wasVaried: variedRef.current,
+    });
     setPlaying(true);
 
     stopTick();
-    tickRef.current = setInterval(async () => {
+    tickRef.current = setInterval(() => {
       const end = endAtRef.current;
       if (end === null) return;
       const left = (end - Date.now()) / 1000;
-      if (left <= 0) {
-        await endSession("faded");
-        return;
-      }
-      // The same fade curve the web player uses, from the shared repo. The
-      // native module never computes it.
-      const v = fadeVolume(left, FADE_SECONDS);
-      getNightAudio()?.setVolume(v);
-      setVolume(v);
+      if (left <= 0) { stopTick(); return; } // native performs the actual stop
+      // The same fade curve the web player uses, from the shared repo, purely
+      // to reflect native's countdown/volume in the UI while foregrounded.
+      // Native drives the real volume and the real stop now.
+      setVolume(fadeVolume(left, FADE_SECONDS));
       setRemaining(left);
     }, 1000);
   }
@@ -140,7 +235,7 @@ export default function App() {
             <Text style={s.dim} testID="status">gathering episodes…</Text>
           </View>
         ) : playing && now ? (
-          <PlayerScreen title={now.title} remaining={remaining} volume={volume} onStop={() => endSession("abandoned")} />
+          <PlayerScreen title={now.title} remaining={remaining} volume={volume} onStop={() => endSession()} />
         ) : (
           <SetupScreen onStart={onStart} onResume={onResume} resumeAvailable={!!resumeNight(loadTimerMinutes())} />
         )}

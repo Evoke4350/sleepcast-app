@@ -9,16 +9,42 @@ import MediaPlayer
 /// crossfade, no casting — the surface a general-purpose audio library carries
 /// and that we would then depend on someone else to maintain.
 ///
-/// There is no fade in this file on purpose. The fade curve lives in the shared
-/// TypeScript (`fadeVolume`), so both platforms fade identically and the curve
-/// stays under test. This class only obeys `setVolume`.
+/// The fade curve's source of truth is the shared TypeScript (`fadeVolume` in
+/// vendor/player). This file carries a verbatim port of it (`fadeVolume` below)
+/// because the native timer must fade with the screen locked, when the JS that
+/// used to drive it is suspended. The Kotlin side ports the same curve, pinned
+/// by FadeCurveTest; the Swift port is verified against the same sample points.
 @objc(NightAudioImpl)
 public class NightAudioImpl: NSObject {
 
   private var player: AVPlayer?
   private var endObserver: NSObjectProtocol?
 
+  // Sleep-timer state. The timer lives on the main queue; with the .playback
+  // session active and UIBackgroundModes: audio set, the app stays running
+  // while the screen is locked, so the timer keeps firing.
+  private var timer: DispatchSourceTimer?
+  private var endAt: DispatchTime = .now()
+  private var fadeSecs: Double = 0
+  private var startedAt: DispatchTime = .now()
+  private var timerEpisodeId = ""
+
+  /// Set by NightAudio.mm; fired once when the timer reaches zero, after
+  /// playback has been stopped. Arguments: (episodeId, heardSeconds).
+  @objc public var onNightEnded: ((String, Int) -> Void)?
+
   @objc public static let shared = NightAudioImpl()
+
+  /// Swift port of the shared fade curve (`fadeVolume` in
+  /// vendor/player/src/lib/engine.ts). Must match it EXACTLY:
+  ///   remaining >= fade -> 1, remaining <= 0 -> 0, else remaining / fade.
+  /// FadeCurveTests asserts parity against the same sample points as the
+  /// shared TypeScript tests.
+  @objc public func fadeVolume(_ remainingSeconds: Double, _ fadeSeconds: Double) -> Double {
+    if remainingSeconds >= fadeSeconds { return 1 }
+    if remainingSeconds <= 0 { return 0 }
+    return remainingSeconds / fadeSeconds
+  }
 
   /// Must be called before playback, and it is the single most important line
   /// in the iOS half of this app. `.playback` is what lets audio continue when
@@ -68,7 +94,45 @@ public class NightAudioImpl: NSObject {
     player?.play()
   }
 
+  /// Start (or restart) the authoritative sleep timer. Fades the player's
+  /// volume over the final `fadeSeconds`, then stops playback and fires
+  /// `onNightEnded` with how long the night actually ran.
+  @objc public func scheduleFadeAndStop(_ episodeId: String, durationSeconds: Double,
+                                        fadeSeconds: Double) {
+    cancelTimer()
+    timerEpisodeId = episodeId
+    fadeSecs = fadeSeconds
+    startedAt = .now()
+    endAt = .now() + durationSeconds
+    let t = DispatchSource.makeTimerSource(queue: .main)
+    t.schedule(deadline: .now(), repeating: 0.5)
+    t.setEventHandler { [weak self] in
+      guard let self = self else { return }
+      let remaining = (self.endAt.uptimeNanoseconds > DispatchTime.now().uptimeNanoseconds)
+        ? Double(self.endAt.uptimeNanoseconds - DispatchTime.now().uptimeNanoseconds) / 1_000_000_000
+        : 0
+      if remaining <= 0 {
+        self.player?.volume = 0
+        self.stop()
+        // Rounded, not truncated, to match Android's Math.round — ±1s at the
+        // HEARD_SEC boundary otherwise.
+        let heard = Int((Double(DispatchTime.now().uptimeNanoseconds - self.startedAt.uptimeNanoseconds) / 1_000_000_000).rounded())
+        self.onNightEnded?(self.timerEpisodeId, heard)
+        return // self.stop() above already cancelled this timer
+      }
+      self.player?.volume = Float(self.fadeVolume(remaining, self.fadeSecs))
+    }
+    timer = t
+    t.resume()
+  }
+
+  @objc public func cancelTimer() {
+    timer?.cancel()
+    timer = nil
+  }
+
   @objc public func stop() {
+    cancelTimer()
     player?.pause()
     player = nil
     MPNowPlayingInfoCenter.default().nowPlayingInfo = nil

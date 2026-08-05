@@ -36,6 +36,12 @@
 	</dict>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string></string>
+	<!-- New Architecture on: the NightAudio TurboModule (codegen spec, native
+	     sleep timer, emitOnNightEnded event) requires it. pod install writes
+	     this key if missing — and strips every XML comment in the file when it
+	     does — so keep it committed. -->
+	<key>RCTNewArchEnabled</key>
+	<true/>
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
 	<key>UIRequiredDeviceCapabilities</key>

@@ -4,13 +4,29 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
 import android.content.ComponentName
+import android.os.Handler
+import android.os.Looper
+import android.os.SystemClock
 import android.util.Log
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import com.google.common.util.concurrent.MoreExecutors
+import com.facebook.react.bridge.Arguments
 import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
 import com.sleepcastapp.specs.NativeNightAudioSpec
+
+/**
+ * Kotlin port of the shared TypeScript fade curve. Must match EXACTLY:
+ * remaining >= fade → 1.0, remaining <= 0 → 0.0, else remaining / fade.
+ * Kept file-level and internal so the JUnit parity test can reach it.
+ */
+internal fun fadeVolume(remainingSeconds: Double, fadeSeconds: Double): Double =
+  when {
+    remainingSeconds >= fadeSeconds -> 1.0
+    remainingSeconds <= 0.0 -> 0.0
+    else -> remainingSeconds / fadeSeconds
+  }
 
 /**
  * Playback for a sleep timer.
@@ -22,8 +38,11 @@ import com.sleepcastapp.specs.NativeNightAudioSpec
  * Everything here runs on the main thread: ExoPlayer requires it, and the JS
  * side calls setVolume about once a second, which is nothing.
  *
- * There is no fade in this file on purpose. The fade curve lives in the shared
- * TypeScript so both platforms behave identically and it stays under test.
+ * The fade curve's source of truth is the shared TypeScript (`fadeVolume` in
+ * vendor/player). Android carries a verbatim port of it here (`fadeVolume`
+ * below) because the native timer must fade with the screen off, when the JS
+ * that used to drive it is suspended. FadeCurveTest pins the port to the shared
+ * values so the two cannot drift.
  *
  * The player itself lives in NightAudioService, a foreground MediaSessionService,
  * because that is the only way Android lets audio survive the screen going off —
@@ -52,6 +71,16 @@ class NightAudioModule(reactContext: ReactApplicationContext) :
 
   private val player: Player?
     get() = controller
+
+  // Native sleep timer. Handler on the main looper because ExoPlayer demands
+  // the main thread; SystemClock.elapsedRealtime() because it is monotonic —
+  // wall-clock adjustments must not lengthen or shorten a night.
+  private val timerHandler = Handler(Looper.getMainLooper())
+  private var timerRunnable: Runnable? = null
+  private var endAtElapsed = 0L
+  private var fadeSeconds = 0.0
+  private var startedAtElapsed = 0L
+  private var timerEpisodeId = ""
 
   /** Run [block] against a connected MediaController, connecting on first use.
    *
@@ -99,6 +128,10 @@ class NightAudioModule(reactContext: ReactApplicationContext) :
             MediaItem.Builder().setUri(url).setMediaMetadata(metadata).build()
           )
           p.prepare()
+          // invariant: a fade-end can leave a reused player muted (the timer
+          // branch sets volume to 0 before stopping), so every fresh night
+          // must reset volume to full before playback starts or it is silent.
+          p.volume = 1f
           if (startAtSeconds > 0) p.seekTo((startAtSeconds * 1000).toLong())
           p.playWhenReady = true
         }
@@ -116,7 +149,55 @@ class NightAudioModule(reactContext: ReactApplicationContext) :
 
   override fun resume() = runOnMain { player?.playWhenReady = true }
 
+  override fun scheduleFadeAndStop(episodeId: String, durationSeconds: Double, fadeSecs: Double) = runOnMain {
+    cancelTimerInternal()
+    timerEpisodeId = episodeId
+    fadeSeconds = fadeSecs
+    startedAtElapsed = SystemClock.elapsedRealtime()
+    endAtElapsed = startedAtElapsed + (durationSeconds * 1000).toLong()
+    val tick = object : Runnable {
+      override fun run() {
+        val remaining = (endAtElapsed - SystemClock.elapsedRealtime()) / 1000.0
+        if (remaining <= 0.0) {
+          player?.volume = 0f
+          player?.stop()
+          val heard = Math.round((SystemClock.elapsedRealtime() - startedAtElapsed) / 1000.0).toInt()
+          emitNightEnded(timerEpisodeId, heard)
+          // Mirror stop()'s teardown: releasing the last controller lets
+          // media3 stop the service and drop the lingering notification.
+          // Without this, the ExoPlayer stays alive at volume 0 after a fade.
+          controller?.release()
+          controller = null
+          cancelTimerInternal()
+          return
+        }
+        player?.volume = fadeVolume(remaining, fadeSeconds).toFloat()
+        timerHandler.postDelayed(this, 500)
+      }
+    }
+    timerRunnable = tick
+    timerHandler.post(tick)
+  }
+
+  override fun cancelTimer() = runOnMain { cancelTimerInternal() }
+
+  private fun cancelTimerInternal() {
+    timerRunnable?.let { timerHandler.removeCallbacks(it) }
+    timerRunnable = null
+  }
+
+  private fun emitNightEnded(episodeId: String, heardSeconds: Int) {
+    val map = Arguments.createMap().apply {
+      putString("episodeId", episodeId)
+      putInt("heardSeconds", heardSeconds)
+    }
+    // Codegen (from the spec's EventEmitter<NightEndedEvent>) generates
+    // emitOnNightEnded(ReadableMap) on NativeNightAudioSpec.
+    emitOnNightEnded(map)
+  }
+
   override fun stop() = runOnMain {
+    cancelTimerInternal()
     // Releasing the last controller lets media3 stop the service, which drops
     // the notification. Leaving it up after a night ends would be a lie in the
     // shade.

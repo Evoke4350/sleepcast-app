@@ -10,14 +10,38 @@
 
 #import <React/RCTBridgeModule.h>
 #import <AppSpecs/AppSpecs.h>
+// SleepcastApp-Swift.h re-declares every @objc Swift class in the target,
+// including AppDelegate's ReactNativeDelegate, whose superclass
+// (RCTDefaultReactNativeFactoryDelegate) must be visible first or this file
+// fails to compile with "cannot find interface declaration".
+#import <React-RCTAppDelegate/RCTDefaultReactNativeFactoryDelegate.h>
 #import "SleepcastApp-Swift.h"
 
-@interface NightAudio : NSObject <NativeNightAudioSpec>
+// Subclassing NativeNightAudioSpecBase (not NSObject) is what wires the
+// codegen event path: the base class holds the EventEmitterCallback that the
+// TurboModule infra installs, and exposes emitOnNightEnded: to fire the
+// onNightEnded event declared in the spec. Same design Android confirmed —
+// no JS-side change needed.
+@interface NightAudio : NativeNightAudioSpecBase <NativeNightAudioSpec>
 @end
 
 @implementation NightAudio
 
 RCT_EXPORT_MODULE()
+
+- (instancetype)init
+{
+  if (self = [super init]) {
+    __weak NightAudio *weakSelf = self;
+    [NightAudioImpl shared].onNightEnded = ^(NSString *episodeId, NSInteger heardSeconds) {
+      [weakSelf emitOnNightEnded:@{
+        @"episodeId" : episodeId,
+        @"heardSeconds" : @(heardSeconds),
+      }];
+    };
+  }
+  return self;
+}
 
 - (std::shared_ptr<facebook::react::TurboModule>)getTurboModule:
     (const facebook::react::ObjCTurboModule::InitParams &)params
@@ -69,5 +93,16 @@ RCT_EXPORT_MODULE()
                               artworkUrl:artworkUrl
                                 duration:durationSeconds];
 }
+
+- (void)scheduleFadeAndStop:(NSString *)episodeId
+            durationSeconds:(double)durationSeconds
+                fadeSeconds:(double)fadeSeconds
+{
+  [[NightAudioImpl shared] scheduleFadeAndStop:episodeId
+                               durationSeconds:durationSeconds
+                                   fadeSeconds:fadeSeconds];
+}
+
+- (void)cancelTimer { [[NightAudioImpl shared] cancelTimer]; }
 
 @end
