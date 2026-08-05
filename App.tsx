@@ -264,7 +264,7 @@ export default function App() {
             <Text style={s.dim} testID="status">gathering episodes…</Text>
           </View>
         ) : playing && now ? (
-          <PlayerScreen title={now.title} remaining={remaining} volume={volume} onStop={() => endSession()} />
+          <PlayerScreen title={now.title} remaining={remaining} volume={volume} onStop={() => endSession()} onInteract={() => restRef.current?.noteInteraction()} />
         ) : (
           <SetupScreen onStart={onStart} onResume={onResume} resumeAvailable={!!resumeNight(loadTimerMinutes())} />
         )}

@@ -2,11 +2,15 @@ import React from "react";
 import { View, Text, TouchableOpacity, StyleSheet } from "react-native";
 import { formatTime } from "../../vendor/player/src/lib/engine";
 
-interface PlayerProps { title: string; remaining: number; volume: number; onStop: () => void; }
+interface PlayerProps { title: string; remaining: number; volume: number; onStop: () => void; onInteract?: () => void; }
 
-export default function PlayerScreen({ title, remaining, volume, onStop }: PlayerProps) {
+export default function PlayerScreen({ title, remaining, volume, onStop, onInteract }: PlayerProps) {
   return (
-    <View style={s.body}>
+    <View
+      style={s.body}
+      testID="player-root"
+      onStartShouldSetResponderCapture={() => { onInteract?.(); return false; }}
+    >
       <Text style={s.moon}>☾</Text>
       <Text style={s.title} testID="nowPlaying" numberOfLines={2}>{title}</Text>
       <Text style={s.dim} testID="countdown">{formatTime(remaining)}</Text>
