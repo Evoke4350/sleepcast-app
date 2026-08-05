@@ -97,10 +97,12 @@ RCT_EXPORT_MODULE()
 - (void)scheduleFadeAndStop:(NSString *)episodeId
             durationSeconds:(double)durationSeconds
                 fadeSeconds:(double)fadeSeconds
+                       trim:(double)trim
 {
   [[NightAudioImpl shared] scheduleFadeAndStop:episodeId
                                durationSeconds:durationSeconds
-                                   fadeSeconds:fadeSeconds];
+                                   fadeSeconds:fadeSeconds
+                                          trim:trim];
 }
 
 - (void)cancelTimer { [[NightAudioImpl shared] cancelTimer]; }

@@ -26,6 +26,7 @@ public class NightAudioImpl: NSObject {
   private var timer: DispatchSourceTimer?
   private var endAt: DispatchTime = .now()
   private var fadeSecs: Double = 0
+  private var fadeTrim: Double = 1
   private var startedAt: DispatchTime = .now()
   private var timerEpisodeId = ""
 
@@ -44,6 +45,16 @@ public class NightAudioImpl: NSObject {
     if remainingSeconds >= fadeSeconds { return 1 }
     if remainingSeconds <= 0 { return 0 }
     return remainingSeconds / fadeSeconds
+  }
+
+  /// Swift port of `effectiveVolume` in vendor/player/src/lib/engine.ts. Must
+  /// match it EXACTLY: `min(1, max(0, fadeVolume(remaining, fade) * trim))`.
+  /// The per-feed trim scales the whole fade curve; the clamp keeps a bad trim
+  /// (negative, or > 1) from ever reaching AVPlayer.
+  @objc public func effectiveVolume(_ remainingSeconds: Double, _ fadeSeconds: Double,
+                                    _ trim: Double) -> Double {
+    let v = fadeVolume(remainingSeconds, fadeSeconds) * trim
+    return min(1, max(0, v))
   }
 
   /// Must be called before playback, and it is the single most important line
@@ -98,12 +109,16 @@ public class NightAudioImpl: NSObject {
   /// volume over the final `fadeSeconds`, then stops playback and fires
   /// `onNightEnded` with how long the night actually ran.
   @objc public func scheduleFadeAndStop(_ episodeId: String, durationSeconds: Double,
-                                        fadeSeconds: Double) {
+                                        fadeSeconds: Double, trim: Double) {
     cancelTimer()
     timerEpisodeId = episodeId
     fadeSecs = fadeSeconds
+    fadeTrim = trim
     startedAt = .now()
     endAt = .now() + durationSeconds
+    // Apply the trim immediately: the first timer tick is up to 0.5s away, and
+    // the ceiling should hold from the first audible moment, not after it.
+    player?.volume = Float(min(1, max(0, trim)))
     let t = DispatchSource.makeTimerSource(queue: .main)
     t.schedule(deadline: .now(), repeating: 0.5)
     t.setEventHandler { [weak self] in
@@ -120,7 +135,7 @@ public class NightAudioImpl: NSObject {
         self.onNightEnded?(self.timerEpisodeId, heard)
         return // self.stop() above already cancelled this timer
       }
-      self.player?.volume = Float(self.fadeVolume(remaining, self.fadeSecs))
+      self.player?.volume = Float(self.effectiveVolume(remaining, self.fadeSecs, self.fadeTrim))
     }
     timer = t
     t.resume()
