@@ -3,7 +3,7 @@ import { installLocalStorage } from "../platform/storage";
 import React from "react";
 import TestRenderer, { act } from "react-test-renderer";
 import SetupScreen from "./SetupScreen";
-import { loadState } from "../../vendor/player/src/lib/store";
+import { loadState, saveState } from "../../vendor/player/src/lib/store";
 import { appendNight } from "../../vendor/player/src/lib/rest/ledger";
 import { loadQuietUntil, loadStepBackAsked } from "../../vendor/player/src/lib/rest/ledger";
 
@@ -19,6 +19,28 @@ test("adding a feed by URL persists it", () => {
   act(() => { find(tree, "add-feed-input").props.onChangeText("https://feeds.example/x"); });
   act(() => { find(tree, "add-feed").props.onPress(); });
   expect(loadState().feeds.some((f) => f.url === "https://feeds.example/x")).toBe(true);
+});
+
+test("adding a YouTube channel URL resolves and stores the feed URL", async () => {
+  let tree!: TestRenderer.ReactTestRenderer;
+  act(() => { tree = TestRenderer.create(<SetupScreen onStart={() => {}} />); });
+  act(() => { find(tree, "add-feed-input").props.onChangeText("https://www.youtube.com/channel/UCabcdefghijklmnopqrstuv"); });
+  await act(async () => { await find(tree, "add-feed").props.onPress(); });
+  expect(
+    loadState().feeds.some(
+      (f) => f.url === "https://www.youtube.com/feeds/videos.xml?channel_id=UCabcdefghijklmnopqrstuv"
+    )
+  ).toBe(true);
+});
+
+test("adding a YouTube video URL shows a feed error instead of adding a feed", async () => {
+  let tree!: TestRenderer.ReactTestRenderer;
+  const before = loadState().feeds.length;
+  act(() => { tree = TestRenderer.create(<SetupScreen onStart={() => {}} />); });
+  act(() => { find(tree, "add-feed-input").props.onChangeText("https://www.youtube.com/watch?v=ABC123abcd0"); });
+  await act(async () => { await find(tree, "add-feed").props.onPress(); });
+  expect(loadState().feeds.length).toBe(before);
+  expect(find(tree, "feed-error").props.children).toContain("video");
 });
 
 test("start-varied invokes onStart with the selected timer", () => {
@@ -108,4 +130,35 @@ test("declining step-back records the ask but stays loud", () => {
   expect(loadQuietUntil()).toBeNull();
   expect(loadStepBackAsked()).not.toBeNull();
   expect(hasStepBackOffer(tree)).toBe(false); // card hides after declining too
+});
+
+test("enabling a YouTube feed alongside a podcast feed shows the mix warning and disables start", () => {
+  const s = loadState();
+  // "swm" is a builtin podcast feed, enabled by default. Add an enabled
+  // YouTube feed alongside it so both kinds are live at once.
+  const feeds = [...s.feeds, {
+    id: "ytc",
+    url: "https://www.youtube.com/feeds/videos.xml?channel_id=UCabcdefghijklmnopqrstuv",
+    title: "A Channel",
+    builtin: false,
+    enabled: true,
+    skipIntroMin: 0,
+  }];
+  saveState({ ...s, feeds });
+
+  const onStart = jest.fn();
+  let tree!: TestRenderer.ReactTestRenderer;
+  act(() => { tree = TestRenderer.create(<SetupScreen onStart={onStart} />); });
+
+  expect(find(tree, "mix-warning")).toBeTruthy();
+  expect(find(tree, "start-varied").props.disabled).toBe(true);
+  act(() => { find(tree, "start-varied").props.onPress(); });
+  expect(onStart).not.toHaveBeenCalled();
+});
+
+test("no mix warning when only one kind of feed is enabled", () => {
+  let tree!: TestRenderer.ReactTestRenderer;
+  act(() => { tree = TestRenderer.create(<SetupScreen onStart={() => {}} />); });
+  expect(tree.root.findAllByProps({ testID: "mix-warning" })).toHaveLength(0);
+  expect(find(tree, "start-varied").props.disabled).toBeFalsy();
 });

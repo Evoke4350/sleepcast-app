@@ -1,5 +1,5 @@
 import type { Episode } from "../../vendor/player/src/lib/engine";
-import { parseFeed } from "./feed";
+import { parseFeedFor } from "./youtube";
 import { loadState, cacheFeedXml, getCachedFeedXml } from "../../vendor/player/src/lib/store";
 
 export type XmlFetcher = (url: string) => Promise<string>;
@@ -32,7 +32,7 @@ export async function buildPool(fetchXml: XmlFetcher): Promise<PoolResult> {
         return { error: `${f.title || f.url}: no network and no cache` };
       }
       try {
-        const feed = parseFeed(xml, f.id);
+        const feed = parseFeedFor(xml, f.id, f.url);
         return { id: f.id, title: feed.title || f.title, episodes: feed.episodes };
       } catch (e) {
         return { error: `${f.title || f.url}: ${(e as Error).message}` };

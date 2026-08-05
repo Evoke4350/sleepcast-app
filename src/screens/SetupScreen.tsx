@@ -6,6 +6,8 @@ import {
 import { parseOpml, buildOpml } from "../platform/opml";
 import { nextTrim } from "../logic/trim";
 import type { AppState } from "../../vendor/player/src/lib/store";
+import { youtubeFeedUrl, isYouTubeFeedUrl } from "../platform/youtube-url";
+import { resolveYouTubeFeedUrl } from "../platform/youtube-add";
 import { qualifiesForStepBack, isQuiet, quietUntilFrom } from "../../vendor/player/src/lib/rest/stepback";
 import { loadNights, loadQuietUntil, saveQuietUntil, loadStepBackAsked, markStepBackAsked } from "../../vendor/player/src/lib/rest/ledger";
 
@@ -25,6 +27,7 @@ export default function SetupScreen({ onStart, onResume, resumeAvailable, onOpen
   const [state, setState] = useState<AppState>(() => loadState());
   const [url, setUrl] = useState("");
   const [minutes, setMinutes] = useState(state.settings.timerMinutes);
+  const [feedError, setFeedError] = useState<string | null>(null);
   // Eligibility for the step-back offer, computed once on mount: not
   // currently quiet, not asked within a quiet window of a previous ask, and
   // the run itself qualifies (see vendor rest/stepback.ts).
@@ -43,9 +46,20 @@ export default function SetupScreen({ onStart, onResume, resumeAvailable, onOpen
   function toggleFeed(id: string, enabled: boolean) {
     persist({ ...state, feeds: state.feeds.map((f) => (f.id === id ? { ...f, enabled } : f)) });
   }
-  function addFeed() {
-    if (!url.trim()) return;
-    try { persist(addCustomFeed(state, url.trim())); setUrl(""); } catch { /* invalid url: leave text for correction */ }
+  async function addFeed() {
+    const trimmed = url.trim();
+    if (!trimmed) return;
+    setFeedError(null);
+    if (youtubeFeedUrl(trimmed)) {
+      const resolved = await resolveYouTubeFeedUrl(trimmed);
+      if (!resolved.ok) {
+        setFeedError(resolved.reason === "video" ? "that's a video, not a channel" : "couldn't find that channel");
+        return;
+      }
+      try { persist(addCustomFeed(state, resolved.feedUrl, undefined)); setUrl(""); } catch { /* invalid url: leave text for correction */ }
+      return;
+    }
+    try { persist(addCustomFeed(state, trimmed)); setUrl(""); } catch { /* invalid url: leave text for correction */ }
   }
   function removeFeed(id: string) { persist(removeCustomFeed(state, id)); }
   function stepTrim(id: string, dir: 1 | -1) {
@@ -67,6 +81,16 @@ export default function SetupScreen({ onStart, onResume, resumeAvailable, onOpen
     persist(next);
   }
   function pickTimer(m: number) { setMinutes(m); saveTimerMinutes(m); }
+
+  // A night can only be all-YouTube or all-podcast: the player has no way to
+  // mix the two backends within one pool, so enabling both kinds at once
+  // blocks starting rather than silently dropping one.
+  const enabledFeeds = state.feeds.filter((f) => f.enabled).map((f) => f.url);
+  const mixed = enabledFeeds.some(isYouTubeFeedUrl) && enabledFeeds.some((u) => !isYouTubeFeedUrl(u));
+  function startIfNotMixed(strategy: "shuffle" | "spread" | "varied", m: number) {
+    if (mixed) return;
+    onStart(strategy, m);
+  }
 
   return (
     <ScrollView style={s.root} contentContainerStyle={s.body}>
@@ -106,6 +130,9 @@ export default function SetupScreen({ onStart, onResume, resumeAvailable, onOpen
         />
         <TouchableOpacity testID="add-feed" style={s.btn} onPress={addFeed}><Text style={s.btnT}>add</Text></TouchableOpacity>
       </View>
+      {feedError && (
+        <Text testID="feed-error" style={s.feedError}>{feedError}</Text>
+      )}
       <View style={s.addRow}>
         <TouchableOpacity testID="opml-import" style={s.btn} onPress={() => importOpml("")}><Text style={s.btnT}>import OPML</Text></TouchableOpacity>
         <TouchableOpacity testID="opml-export" style={s.btn} onPress={exportOpml}><Text style={s.btnT}>export OPML</Text></TouchableOpacity>
@@ -131,10 +158,15 @@ export default function SetupScreen({ onStart, onResume, resumeAvailable, onOpen
       </View>
 
       <Text style={s.h}>start</Text>
+      {mixed && (
+        <Text testID="mix-warning" style={s.mixWarning}>
+          a YouTube night can't mix with podcast feeds — turn one kind off
+        </Text>
+      )}
       <View style={s.row}>
-        <TouchableOpacity testID="start-shuffle" style={s.btn} onPress={() => onStart("shuffle", minutes)}><Text style={s.btnT}>shuffle</Text></TouchableOpacity>
-        <TouchableOpacity testID="start-spread" style={s.btn} onPress={() => onStart("spread", minutes)}><Text style={s.btnT}>spread</Text></TouchableOpacity>
-        <TouchableOpacity testID="start-varied" style={s.btn} onPress={() => onStart("varied", minutes)}><Text style={s.btnT}>varied</Text></TouchableOpacity>
+        <TouchableOpacity testID="start-shuffle" disabled={mixed} style={s.btn} onPress={() => startIfNotMixed("shuffle", minutes)}><Text style={s.btnT}>shuffle</Text></TouchableOpacity>
+        <TouchableOpacity testID="start-spread" disabled={mixed} style={s.btn} onPress={() => startIfNotMixed("spread", minutes)}><Text style={s.btnT}>spread</Text></TouchableOpacity>
+        <TouchableOpacity testID="start-varied" disabled={mixed} style={s.btn} onPress={() => startIfNotMixed("varied", minutes)}><Text style={s.btnT}>varied</Text></TouchableOpacity>
       </View>
       {resumeAvailable && (
         <TouchableOpacity testID="start-resume" style={s.btn} onPress={onResume}><Text style={s.btnT}>resume last night</Text></TouchableOpacity>
@@ -163,6 +195,8 @@ const s = StyleSheet.create({
   trimVal: { color: "#8a7a5c", fontSize: 12, minWidth: 44, textAlign: "center" },
   addRow: { flexDirection: "row", gap: 8, alignItems: "center" },
   input: { flex: 1, color: "#d9c9a8", borderWidth: 1, borderColor: "#3a3325", borderRadius: 8, paddingHorizontal: 12, paddingVertical: 8 },
+  feedError: { color: "#b3746b", fontSize: 12 },
+  mixWarning: { color: "#b3746b", fontSize: 12, marginBottom: 4 },
   row: { flexDirection: "row", gap: 10, flexWrap: "wrap" },
   qhRow: { flexDirection: "row", alignItems: "center", gap: 10 },
   qhLabel: { color: "#c8c0b0", flex: 1, fontSize: 13 },
