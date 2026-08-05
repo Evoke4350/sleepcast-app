@@ -29,6 +29,16 @@ internal fun fadeVolume(remainingSeconds: Double, fadeSeconds: Double): Double =
   }
 
 /**
+ * Kotlin port of the shared TypeScript effectiveVolume. Must match EXACTLY:
+ * clamp01(fadeVolume(remaining, fade) * trim). File-level and internal so the
+ * JUnit parity test can reach it.
+ */
+internal fun effectiveVolume(remainingSeconds: Double, fadeSeconds: Double, trim: Double): Double {
+  val v = fadeVolume(remainingSeconds, fadeSeconds) * trim
+  return v.coerceIn(0.0, 1.0)
+}
+
+/**
  * Playback for a sleep timer.
  *
  * ExoPlayer rather than MediaPlayer because it handles the streaming cases a
@@ -79,6 +89,7 @@ class NightAudioModule(reactContext: ReactApplicationContext) :
   private var timerRunnable: Runnable? = null
   private var endAtElapsed = 0L
   private var fadeSeconds = 0.0
+  private var fadeTrim = 1.0
   private var startedAtElapsed = 0L
   private var timerEpisodeId = ""
 
@@ -149,12 +160,16 @@ class NightAudioModule(reactContext: ReactApplicationContext) :
 
   override fun resume() = runOnMain { player?.playWhenReady = true }
 
-  override fun scheduleFadeAndStop(episodeId: String, durationSeconds: Double, fadeSecs: Double) = runOnMain {
+  override fun scheduleFadeAndStop(episodeId: String, durationSeconds: Double, fadeSecs: Double, trim: Double) = runOnMain {
     cancelTimerInternal()
     timerEpisodeId = episodeId
     fadeSeconds = fadeSecs
+    fadeTrim = trim
     startedAtElapsed = SystemClock.elapsedRealtime()
     endAtElapsed = startedAtElapsed + (durationSeconds * 1000).toLong()
+    // Apply the trim immediately, before the first tick: a night must start at
+    // the feed's trimmed level, not blast at full volume for half a second.
+    player?.volume = trim.coerceIn(0.0, 1.0).toFloat()
     val tick = object : Runnable {
       override fun run() {
         val remaining = (endAtElapsed - SystemClock.elapsedRealtime()) / 1000.0
@@ -171,7 +186,7 @@ class NightAudioModule(reactContext: ReactApplicationContext) :
           cancelTimerInternal()
           return
         }
-        player?.volume = fadeVolume(remaining, fadeSeconds).toFloat()
+        player?.volume = effectiveVolume(remaining, fadeSeconds, fadeTrim).toFloat()
         timerHandler.postDelayed(this, 500)
       }
     }

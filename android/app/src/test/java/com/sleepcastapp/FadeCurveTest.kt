@@ -16,4 +16,11 @@ class FadeCurveTest {
     assertEquals(0.0, fadeVolume(0.0, 60.0), 1e-9)
     assertEquals(0.0, fadeVolume(-5.0, 60.0), 1e-9)
   }
+
+  @Test fun effectiveVolumeMatchesSharedCurve() {
+    assertEquals(0.25, effectiveVolume(30.0, 60.0, 0.5), 1e-9)   // 0.5 fade × 0.5 trim
+    assertEquals(0.75, effectiveVolume(120.0, 60.0, 0.75), 1e-9) // full × 0.75
+    assertEquals(1.0,  effectiveVolume(120.0, 60.0, 1.5), 1e-9)  // clamps to 1
+    assertEquals(0.0,  effectiveVolume(0.0, 60.0, 1.5), 1e-9)
+  }
 }

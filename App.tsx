@@ -10,10 +10,10 @@ import { buildPool } from "./src/platform/feeds";
 import { chooseLineup, resumeNight, type Strategy } from "./src/logic/selection";
 import { saveMarker, loadMarker, clearMarker, reconcileToLastNight } from "./src/logic/nightmarker";
 import { getNightAudio } from "./src/specs/NativeNightAudio";
-import { fadeVolume } from "./vendor/player/src/lib/engine";
+import { effectiveVolume } from "./vendor/player/src/lib/engine";
 import { RestSession } from "./vendor/player/src/lib/rest/session";
 import { appendNight } from "./vendor/player/src/lib/rest/ledger";
-import { recordHeardPlay, saveLastNight, loadTimerMinutes, loadLastNight } from "./vendor/player/src/lib/store";
+import { recordHeardPlay, saveLastNight, loadTimerMinutes, loadLastNight, loadState } from "./vendor/player/src/lib/store";
 import { HEARD_SEC } from "./vendor/player/src/lib/plays";
 import type { Episode } from "./vendor/player/src/lib/engine";
 import SetupScreen from "./src/screens/SetupScreen";
@@ -46,6 +46,7 @@ export default function App() {
   const feedTitlesRef = useRef<Record<string, string>>({});
   const restRef = useRef<RestSession | null>(null);
   const appStateRef = useRef(AppState.currentState);
+  const trimRef = useRef(1);
 
   // If the OS killed the process mid-night, onNightEnded never fired and the
   // ledger was never written. A marker persisted at play time (see
@@ -200,8 +201,12 @@ export default function App() {
     getNightAudio()?.setNowPlaying(lead.title, "sleepcast", "", 0);
     await getNightAudio()?.play(lead.url, 0);
     // Native now owns the fade/stop: it keeps running even if the screen
-    // locks and JS timers suspend. It reports back via onNightEnded.
-    getNightAudio()?.scheduleFadeAndStop(lead.id, minutes * 60, FADE_SECONDS);
+    // locks and JS timers suspend. It reports back via onNightEnded. The
+    // feed's volume trim (Settings.feedTrim, defaulting to 1) has to travel
+    // with it so native can fold it into the volume it drives all night, not
+    // just during the fade window.
+    trimRef.current = loadState().settings.feedTrim[lead.feedId] ?? 1;
+    getNightAudio()?.scheduleFadeAndStop(lead.id, minutes * 60, FADE_SECONDS, trimRef.current);
     // Persist a "live night" marker so a killed process can be reconciled on
     // the next launch (see the mount effect). Cleared by finishNight once
     // the night ends cleanly through either onNightEnded or a manual stop.
@@ -227,10 +232,11 @@ export default function App() {
         hidden: appStateRef.current !== "active",
         fadingOrDone: left <= FADE_SECONDS,
       });
-      // The same fade curve the web player uses, from the shared repo, purely
-      // to reflect native's countdown/volume in the UI while foregrounded.
-      // Native drives the real volume and the real stop now.
-      setVolume(fadeVolume(left, FADE_SECONDS));
+      // The same fade curve (and per-feed trim) the web player uses, from the
+      // shared repo, purely to reflect native's countdown/volume in the UI
+      // while foregrounded. Native drives the real volume and the real stop
+      // now.
+      setVolume(effectiveVolume(left, FADE_SECONDS, trimRef.current));
       setRemaining(left);
     }, 1000);
   }

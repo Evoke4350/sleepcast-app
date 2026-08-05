@@ -4,6 +4,7 @@ import {
   loadState, saveState, addCustomFeed, removeCustomFeed, saveTimerMinutes,
 } from "../../vendor/player/src/lib/store";
 import { parseOpml, buildOpml } from "../platform/opml";
+import { nextTrim } from "../logic/trim";
 import type { AppState } from "../../vendor/player/src/lib/store";
 
 // All >= the vendor store's TIMER_MIN (5); a sub-minimum chip would start that
@@ -33,6 +34,11 @@ export default function SetupScreen({ onStart, onResume, resumeAvailable, onOpen
     try { persist(addCustomFeed(state, url.trim())); setUrl(""); } catch { /* invalid url: leave text for correction */ }
   }
   function removeFeed(id: string) { persist(removeCustomFeed(state, id)); }
+  function stepTrim(id: string, dir: 1 | -1) {
+    const cur = state.settings.feedTrim[id] ?? 1;
+    const next = nextTrim(cur, dir);
+    persist({ ...state, settings: { ...state.settings, feedTrim: { ...state.settings.feedTrim, [id]: next } } });
+  }
   async function exportOpml() {
     const xml = buildOpml(state.feeds.filter((f) => f.enabled).map((f) => ({ url: f.url, title: f.title })));
     await Share.share({ message: xml });
@@ -52,14 +58,21 @@ export default function SetupScreen({ onStart, onResume, resumeAvailable, onOpen
     <ScrollView style={s.root} contentContainerStyle={s.body}>
       <Text style={s.h}>feeds</Text>
       {state.feeds.map((f) => (
-        <View key={f.id} style={s.feedRow}>
-          <Text style={s.feedTitle} numberOfLines={1}>{f.title}</Text>
-          <Switch testID={`feed-toggle-${f.id}`} value={f.enabled} onValueChange={(v) => toggleFeed(f.id, v)} />
-          {!f.builtin && (
-            <TouchableOpacity testID={`feed-remove-${f.id}`} onPress={() => removeFeed(f.id)}>
-              <Text style={s.remove}>✕</Text>
-            </TouchableOpacity>
-          )}
+        <View key={f.id} style={s.feedRowContainer}>
+          <View style={s.feedRow}>
+            <Text style={s.feedTitle} numberOfLines={1}>{f.title}</Text>
+            <Switch testID={`feed-toggle-${f.id}`} value={f.enabled} onValueChange={(v) => toggleFeed(f.id, v)} />
+            {!f.builtin && (
+              <TouchableOpacity testID={`feed-remove-${f.id}`} onPress={() => removeFeed(f.id)}>
+                <Text style={s.remove}>✕</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+          <View style={s.trimRow}>
+            <TouchableOpacity testID={`trim-down-${f.id}`} onPress={() => stepTrim(f.id, -1)} style={s.trimBtn}><Text style={s.trimBtnT}>−</Text></TouchableOpacity>
+            <Text testID={`trim-value-${f.id}`} style={s.trimVal}>{`${(state.settings.feedTrim[f.id] ?? 1).toFixed(2)}×`}</Text>
+            <TouchableOpacity testID={`trim-up-${f.id}`} onPress={() => stepTrim(f.id, 1)} style={s.trimBtn}><Text style={s.trimBtnT}>+</Text></TouchableOpacity>
+          </View>
         </View>
       ))}
       <View style={s.addRow}>
@@ -106,9 +119,14 @@ const s = StyleSheet.create({
   root: { flex: 1, backgroundColor: "#050508" },
   body: { padding: 24, gap: 12 },
   h: { color: "#6e5d44", fontSize: 12, textTransform: "uppercase", marginTop: 12 },
+  feedRowContainer: { flexDirection: "column", gap: 6 },
   feedRow: { flexDirection: "row", alignItems: "center", gap: 10 },
   feedTitle: { color: "#c8c0b0", flex: 1, fontSize: 14 },
   remove: { color: "#b3746b", fontSize: 16, paddingHorizontal: 6 },
+  trimRow: { flexDirection: "row", alignItems: "center", gap: 10 },
+  trimBtn: { borderWidth: 1, borderColor: "#3a3325", borderRadius: 999, width: 30, height: 30, alignItems: "center", justifyContent: "center" },
+  trimBtnT: { color: "#d9c9a8", fontSize: 16 },
+  trimVal: { color: "#8a7a5c", fontSize: 12, minWidth: 44, textAlign: "center" },
   addRow: { flexDirection: "row", gap: 8, alignItems: "center" },
   input: { flex: 1, color: "#d9c9a8", borderWidth: 1, borderColor: "#3a3325", borderRadius: 8, paddingHorizontal: 12, paddingVertical: 8 },
   row: { flexDirection: "row", gap: 10, flexWrap: "wrap" },

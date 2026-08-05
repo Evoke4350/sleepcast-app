@@ -4,7 +4,7 @@ import React from "react";
 import TestRenderer, { act } from "react-test-renderer";
 // Real store module (not mocked) so the regression test below can assert on
 // what App actually persisted.
-import { loadLastNight } from "../vendor/player/src/lib/store";
+import { loadLastNight, loadState, saveState } from "../vendor/player/src/lib/store";
 // Real nightmarker module (not mocked) so the reconcile-on-launch test below
 // can seed a marker exactly as beginPlayback would, and assert it gets
 // cleared exactly as reconcileToLastNight would.
@@ -103,7 +103,37 @@ test("start schedules the native timer with the episode and fade", async () => {
   await act(async () => {});
   await act(async () => { tree.root.findByProps({ testID: "timer-5" }).props.onPress(); });
   await act(async () => { tree.root.findByProps({ testID: "start-shuffle" }).props.onPress(); });
-  expect(mockAudio.scheduleFadeAndStop).toHaveBeenCalledWith("a", 300, 60);
+  expect(mockAudio.scheduleFadeAndStop).toHaveBeenCalledWith("a", 300, 60, 1);
+  act(() => { tree.unmount(); });
+});
+
+// Slice 4, Task 1: the per-feed volume trim from Settings must reach the
+// native fade timer, not just the fade curve — native is authoritative for
+// volume now, so it needs the trim to fold in.
+test("start passes the feed's trim to the native timer", async () => {
+  mockAudio = freshAudio();
+  mockPoolResult = { pool: [{ id: "a", title: "A", url: "https://x/a.mp3", feedId: "f", date: "2024-01-01" }], feedTitles: { f: "F" }, errors: [] };
+  // give feed "f" a 0.75 trim
+  const s = loadState();
+  saveState({ ...s, settings: { ...s.settings, feedTrim: { ...s.settings.feedTrim, f: 0.75 } } });
+  let tree!: TestRenderer.ReactTestRenderer;
+  await act(async () => { tree = TestRenderer.create(<App />); });
+  await act(async () => {});
+  await act(async () => { tree.root.findByProps({ testID: "timer-5" }).props.onPress(); });
+  await act(async () => { tree.root.findByProps({ testID: "start-shuffle" }).props.onPress(); });
+  expect(mockAudio.scheduleFadeAndStop).toHaveBeenCalledWith("a", 300, 60, 0.75);
+  act(() => { tree.unmount(); });
+});
+
+test("a feed with no trim defaults to 1", async () => {
+  mockAudio = freshAudio();
+  mockPoolResult = { pool: [{ id: "b", title: "B", url: "https://x/b.mp3", feedId: "g", date: "2024-01-01" }], feedTitles: { g: "G" }, errors: [] };
+  let tree!: TestRenderer.ReactTestRenderer;
+  await act(async () => { tree = TestRenderer.create(<App />); });
+  await act(async () => {});
+  await act(async () => { tree.root.findByProps({ testID: "timer-5" }).props.onPress(); });
+  await act(async () => { tree.root.findByProps({ testID: "start-shuffle" }).props.onPress(); });
+  expect(mockAudio.scheduleFadeAndStop).toHaveBeenCalledWith("b", 300, 60, 1);
   act(() => { tree.unmount(); });
 });
 
