@@ -281,6 +281,30 @@ test("the quarter-hour rule stops the night and shows the getting-up screen", as
   } finally { jest.useRealTimers(); }
 });
 
+test("quiet suppresses the quarter-hour rule (no getting-up screen while quiet)", async () => {
+  mockAudio = freshAudio();
+  mockPoolResult = { pool: [{ id: "a", title: "A", url: "https://x/a.mp3", feedId: "f", date: "2024-01-01" }], feedTitles: { f: "F" }, errors: [] };
+  const s = loadState();
+  saveState({ ...s, settings: { ...s.settings, quarterHourRule: true } });
+  saveQuietUntil(quietUntilFrom(Date.now())); // stepped back → quiet
+  let tree!: TestRenderer.ReactTestRenderer;
+  jest.useFakeTimers();
+  try {
+    await act(async () => { tree = TestRenderer.create(<App />); });
+    await act(async () => {});
+    await act(async () => { tree.root.findByProps({ testID: "timer-45" }).props.onPress(); });
+    await act(async () => { tree.root.findByProps({ testID: "start-shuffle" }).props.onPress(); });
+    const root = tree.root.findByProps({ testID: "player-root" });
+    await act(async () => { root.props.onStartShouldSetResponderCapture(); root.props.onStartShouldSetResponderCapture(); root.props.onStartShouldSetResponderCapture(); });
+    await act(async () => { await jest.advanceTimersByTimeAsync(26 * 60_000); });
+    await act(async () => { tree.root.findByProps({ testID: "player-root" }).props.onStartShouldSetResponderCapture(); });
+    await act(async () => { await jest.advanceTimersByTimeAsync(1000); });
+    // same restless timeline as the fire test, but quiet gates it off entirely
+    expect(tree.root.findAllByType(GettingUpScreen).length).toBe(0);
+    act(() => { tree.unmount(); });
+  } finally { jest.useRealTimers(); }
+});
+
 test("quiet suppresses the resume affordance", async () => {
   mockAudio = freshAudio();
   mockPoolResult = { pool: [{ id: "a", title: "A", url: "https://x/a.mp3", feedId: "f", date: "2024-01-01" }], feedTitles: { f: "F" }, errors: [] };

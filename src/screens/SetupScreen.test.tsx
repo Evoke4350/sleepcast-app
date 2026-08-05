@@ -107,4 +107,5 @@ test("declining step-back records the ask but stays loud", () => {
   act(() => { tree.root.findByProps({ testID: "stepback-decline" }).props.onPress(); });
   expect(loadQuietUntil()).toBeNull();
   expect(loadStepBackAsked()).not.toBeNull();
+  expect(hasStepBackOffer(tree)).toBe(false); // card hides after declining too
 });
