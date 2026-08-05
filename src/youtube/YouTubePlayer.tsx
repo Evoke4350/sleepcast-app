@@ -150,8 +150,24 @@ const YouTubePlayer = forwardRef<YouTubePlayerHandle, YouTubePlayerProps>(functi
               return 0;
             }
           },
+          // A plain setPlay(true) is a no-op — and re-sends nothing into the
+          // WebView — when play is ALREADY true: react-native-youtube-iframe
+          // only issues playVideo() from a useEffect keyed on [play]
+          // (PlayerScripts.js), so it fires on a value CHANGE, not on being
+          // asked again. That matters here specifically because the mount
+          // effect (YouTubeNightScreen) already calls playVideo() once as an
+          // autoplay attempt; if the WebView refuses it, play is already
+          // true, and the yt-begin tap-to-begin fallback's whole job is to
+          // re-ask — so it has to force a genuine false→true transition, not
+          // just assert true again. The video isn't actually playing yet in
+          // that case (the attempt was refused), so this false→true toggle
+          // doesn't interrupt anything already in progress.
           play: () => {
-            if (!destroyedRef.current) setPlay(true);
+            if (destroyedRef.current) return;
+            setPlay(false);
+            setTimeout(() => {
+              if (!destroyedRef.current) setPlay(true);
+            }, 0);
           },
           pause: () => {
             if (!destroyedRef.current) setPlay(false);

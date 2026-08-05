@@ -281,6 +281,45 @@ test("an episode heard for LESS than HEARD_SEC is not recorded", () => {
   });
 });
 
+test("a natural end-of-video advances via nextPlayable, excluding the episode that just finished", () => {
+  // getPlayerState stays "playing" throughout — this is testing the ENDED
+  // callback path (onChangeState reporting ENDED, wired to
+  // CreatePlayerArgs.onEnded), not the watchdog, and the watchdog must not
+  // fire and confuse the assertion.
+  const stub = makeStub();
+  let capturedArgs: CreatePlayerArgs | null = null;
+  const createPlayer = jest.fn((args: CreatePlayerArgs) => {
+    capturedArgs = args;
+    args.onReady();
+    return stub;
+  });
+
+  let tree!: TestRenderer.ReactTestRenderer;
+  act(() => {
+    tree = TestRenderer.create(
+      <YouTubeNightScreen lineup={[epA, epB]} minutes={10} trim={1} onEnd={jest.fn()} createPlayer={createPlayer} />,
+    );
+  });
+  advanceTicks(2); // playback under way, epA current — well under HEARD_SEC
+
+  // epA "finishes" (the library's onChangeState(ENDED) path) without ever
+  // having errored or been watchdog-marked dead. Before the nextPlayable fix
+  // this could hand epA straight back — it's unheard-per-the-ledger and
+  // wasn't excluded by anything except a dead-set check it was never added
+  // to. nextPlayable excludes the outgoing episode itself, so with a second
+  // live candidate available it must move on to epB, not repeat epA.
+  act(() => {
+    capturedArgs!.onEnded();
+  });
+
+  expect(stub.loadVideoById).toHaveBeenCalledWith(epB.youtubeId, 0);
+  expect(tree.root.findByProps({ testID: "yt-nowplaying" }).props.children).toBe(epB.title);
+
+  act(() => {
+    tree.unmount();
+  });
+});
+
 test("RestSession.tick is driven every tick once playback is under way", () => {
   const tickSpy = jest.spyOn(RestSession.prototype, "tick");
   const stub = makeStub();

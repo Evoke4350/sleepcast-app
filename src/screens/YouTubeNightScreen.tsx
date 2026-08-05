@@ -26,13 +26,13 @@ import { RestSession } from "../../vendor/player/src/lib/rest/session";
 import { appendNight } from "../../vendor/player/src/lib/rest/ledger";
 import type { RestNight } from "../../vendor/player/src/lib/rest/types";
 import { getPlays, recordHeardPlay } from "../../vendor/player/src/lib/store";
-import { pickNextEpisode, HEARD_SEC } from "../../vendor/player/src/lib/plays";
+import { HEARD_SEC } from "../../vendor/player/src/lib/plays";
 import {
   YouTubeMedia,
   type CreatePlayerArgs,
   type YTPlayerLike,
 } from "../../vendor/player/src/lib/youtube-media";
-import { transportFor, shouldGiveUp, decideAfterError } from "../../vendor/player/src/lib/youtube-night";
+import { transportFor, shouldGiveUp, decideAfterError, nextPlayable } from "../../vendor/player/src/lib/youtube-night";
 import YouTubePlayer, { type YouTubePlayerHandle } from "../youtube/YouTubePlayer";
 
 const FADE_SECONDS = 60;
@@ -155,10 +155,21 @@ export default function YouTubeNightScreen({
   // played to the end, or the watchdog gave up on it. A night with nothing
   // left to play ends rather than sitting on a black frame with the
   // countdown running — see the module doc.
+  //
+  // nextPlayable (not a hand-rolled dead-filter + pickNextEpisode) does two
+  // things a naive pick doesn't: it excludes the OUTGOING episode itself —
+  // not just the dead set — so an episode that just played to the end
+  // (handleEnded, nothing wrong with it, never added to deadRef) can't be
+  // handed straight back; and it falls back to allowing a repeat only when
+  // that outgoing episode is the sole survivor, rather than ending the night
+  // over a technicality. flushHeard runs first so the just-finished
+  // episode's heard time is in the ledger nextPlayable's pickNextEpisode
+  // reads before that pick happens, not after.
   function skipToNext() {
     if (endedRef.current) return;
-    const pool = lineupRef.current.filter((e) => !deadRef.current.has(e.id));
-    const next = pickNextEpisode(pool, getPlays());
+    const outgoingId = currentEpRef.current?.id ?? null;
+    flushHeard(Date.now());
+    const next = nextPlayable(lineupRef.current, deadRef.current, outgoingId, getPlays());
     if (!next) {
       endNight("ended");
       return;
@@ -347,6 +358,10 @@ export default function YouTubeNightScreen({
       <TouchableOpacity style={s.btn} testID="yt-stop" onPress={handleStop}>
         <Text style={s.btnT}>stop</Text>
       </TouchableOpacity>
+      {/* Design-mandated: the screen-on limitation (see the module doc — a
+          locked screen stops WebView playback outright, with no API to
+          change that) has to be said plainly here, not left implicit. */}
+      <Text style={s.note} testID="yt-screen-note">screen stays on for YouTube</Text>
       {!started && (
         <TouchableOpacity style={s.beginBtn} testID="yt-begin" onPress={handleBegin}>
           <Text style={s.beginT}>tap to begin</Text>
@@ -362,6 +377,7 @@ const s = StyleSheet.create({
   moon: { fontSize: 40, color: "#f0dcb8" },
   title: { color: "#c8c0b0", fontSize: 16, textAlign: "center" },
   dim: { color: "#6e5d44", fontSize: 13 },
+  note: { color: "#4a4540", fontSize: 11 },
   btn: { borderWidth: 1, borderColor: "#3a3325", borderRadius: 999, paddingHorizontal: 20, paddingVertical: 10 },
   btnT: { color: "#d9c9a8", fontSize: 14 },
   beginBtn: {
