@@ -1,6 +1,7 @@
 import type { Episode } from "../../vendor/player/src/lib/engine";
 import { recordHeardPlay, saveLastNight } from "../../vendor/player/src/lib/store";
 import { HEARD_SEC } from "../../vendor/player/src/lib/plays";
+import { appendNight } from "../../vendor/player/src/lib/rest/ledger";
 
 export interface LiveMarker {
   episodeId: string; startedAt: number; timerMinutes: number;
@@ -27,5 +28,17 @@ export function reconcileToLastNight(m: LiveMarker, now: number): void {
   }
   const playedIds = m.playedIds.includes(m.episodeId) ? m.playedIds : [...m.playedIds, m.episodeId];
   saveLastNight({ pool: m.lineup, playedIds, feedTitles: m.feedTitles, artworkByFeedId: {}, skipIntroByFeedId: {}, endedVia: "faded", endedAt: now, wasVaried: m.wasVaried });
+  // The process died mid-night, so no RestSession ever observed it — there's
+  // no onset to report. Still record a minimal night so the ledger's night
+  // count (and rollup stats that key off it) aren't silently short one entry.
+  appendNight({
+    startedAt: m.startedAt,
+    timerMinutes: m.timerMinutes,
+    endedVia: "faded",
+    sleptAtMs: null,
+    timeToSleepMs: null,
+    interactions: 0,
+    detector: "none",
+  });
   clearMarker();
 }

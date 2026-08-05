@@ -33,3 +33,11 @@ test("resume button shows only when available", () => {
   act(() => { tree = TestRenderer.create(<SetupScreen onStart={() => {}} resumeAvailable={false} />); });
   expect(tree.root.findAllByProps({ testID: "start-resume" })).toHaveLength(0);
 });
+
+test("the nights link fires onOpenRest", () => {
+  const onOpenRest = jest.fn();
+  let tree!: TestRenderer.ReactTestRenderer;
+  act(() => { tree = TestRenderer.create(<SetupScreen onStart={() => {}} onOpenRest={onOpenRest} />); });
+  act(() => { tree.root.findByProps({ testID: "open-rest" }).props.onPress(); });
+  expect(onOpenRest).toHaveBeenCalled();
+});

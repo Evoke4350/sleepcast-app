@@ -2,6 +2,7 @@ import "../platform/storage";
 import { installLocalStorage } from "../platform/storage";
 import { saveMarker, loadMarker, clearMarker, reconcileToLastNight } from "./nightmarker";
 import { loadLastNight, getPlays } from "../../vendor/player/src/lib/store";
+import { loadNights } from "../../vendor/player/src/lib/rest/ledger";
 import type { Episode } from "../../vendor/player/src/lib/engine";
 
 installLocalStorage();
@@ -24,6 +25,16 @@ test("reconcile writes lastNight + a heard play when enough time elapsed, then c
   expect(last?.endedVia).toBe("faded");
   expect(getPlays().some((p) => p.id === "a")).toBe(true);
   expect(loadMarker()).toBeNull(); // cleared
+});
+
+test("reconcile records a detector:none rest night", () => {
+  const m = { episodeId: "a", startedAt: 5000, timerMinutes: 5, lineup: [ep("a")], playedIds: [], feedTitles: {}, wasVaried: false };
+  const before = loadNights().length;
+  saveMarker(m);
+  reconcileToLastNight(m, 5000 + 5 * 60_000);
+  const nights = loadNights();
+  expect(nights.length).toBe(before + 1);
+  expect(nights[nights.length - 1].detector).toBe("none");
 });
 
 test("reconcile below HEARD_SEC still writes lastNight but records no heard play, then clears", () => {

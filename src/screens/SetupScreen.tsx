@@ -15,9 +15,10 @@ interface SetupProps {
   onStart: (strategy: "shuffle" | "spread" | "varied", minutes: number) => void;
   onResume?: () => void;
   resumeAvailable?: boolean;
+  onOpenRest?: () => void;
 }
 
-export default function SetupScreen({ onStart, onResume, resumeAvailable }: SetupProps) {
+export default function SetupScreen({ onStart, onResume, resumeAvailable, onOpenRest }: SetupProps) {
   const [state, setState] = useState<AppState>(() => loadState());
   const [url, setUrl] = useState("");
   const [minutes, setMinutes] = useState(state.settings.timerMinutes);
@@ -91,6 +92,12 @@ export default function SetupScreen({ onStart, onResume, resumeAvailable }: Setu
       {resumeAvailable && (
         <TouchableOpacity testID="start-resume" style={s.btn} onPress={onResume}><Text style={s.btnT}>resume last night</Text></TouchableOpacity>
       )}
+
+      {onOpenRest && (
+        <TouchableOpacity testID="open-rest" onPress={onOpenRest} style={s.nightsLink}>
+          <Text style={s.nightsText}>nights ›</Text>
+        </TouchableOpacity>
+      )}
     </ScrollView>
   );
 }
@@ -109,4 +116,6 @@ const s = StyleSheet.create({
   chipOn: { borderColor: "#d9c9a8" },
   btn: { borderWidth: 1, borderColor: "#3a3325", borderRadius: 999, paddingHorizontal: 18, paddingVertical: 10 },
   btnT: { color: "#d9c9a8", fontSize: 14 },
+  nightsLink: { marginTop: 12 },
+  nightsText: { color: "#6e5d44", fontSize: 13 },
 });
