@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { ActivityIndicator, StatusBar, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, AppState, StatusBar, StyleSheet, Text, View } from "react-native";
 // Not react-native's SafeAreaView, which is deprecated in 0.86 and warns on
 // every render. react-native-safe-area-context was already a dependency here;
 // the import was simply pointing at the wrong one.
@@ -11,6 +11,8 @@ import { chooseLineup, resumeNight, type Strategy } from "./src/logic/selection"
 import { saveMarker, loadMarker, clearMarker, reconcileToLastNight } from "./src/logic/nightmarker";
 import { getNightAudio } from "./src/specs/NativeNightAudio";
 import { fadeVolume } from "./vendor/player/src/lib/engine";
+import { RestSession } from "./vendor/player/src/lib/rest/session";
+import { appendNight } from "./vendor/player/src/lib/rest/ledger";
 import { recordHeardPlay, saveLastNight, loadTimerMinutes, loadLastNight } from "./vendor/player/src/lib/store";
 import { HEARD_SEC } from "./vendor/player/src/lib/plays";
 import type { Episode } from "./vendor/player/src/lib/engine";
@@ -40,6 +42,8 @@ export default function App() {
   const nowRef = useRef<Episode | null>(null);
   const playedIdsRef = useRef<string[]>([]);
   const feedTitlesRef = useRef<Record<string, string>>({});
+  const restRef = useRef<RestSession | null>(null);
+  const appStateRef = useRef(AppState.currentState);
 
   // If the OS killed the process mid-night, onNightEnded never fired and the
   // ledger was never written. A marker persisted at play time (see
@@ -76,6 +80,14 @@ export default function App() {
       }, 200);
     }
     return () => { if (id) clearInterval(id); };
+  }, []);
+
+  // The rest detector's "hidden" signal (screen off / app backgrounded) comes
+  // from AppState, tracked in a ref rather than state so the 1s tick below
+  // can read it without becoming a render dependency itself.
+  useEffect(() => {
+    const sub = AppState.addEventListener("change", (s) => { appStateRef.current = s; });
+    return () => sub.remove();
   }, []);
 
   useEffect(() => {
@@ -143,6 +155,14 @@ export default function App() {
         endedVia, endedAt: Date.now(), wasVaried: variedRef.current,
       });
     }
+    // The rest detector is purely observational — it never influenced when or
+    // how this night ended, it only watched. Finish and record it here so
+    // every ended night (faded or abandoned) gets exactly one ledger entry,
+    // through this single funnel.
+    if (restRef.current) {
+      appendNight(restRef.current.finish(endedVia, Date.now()));
+      restRef.current = null;
+    }
     nowRef.current = null;
     setPlaying(false); setNow(null); setRemaining(0); setVolume(1);
   }
@@ -172,6 +192,7 @@ export default function App() {
     nowRef.current = lead;
     startedAtRef.current = Date.now();
     endAtRef.current = Date.now() + minutes * 60_000;
+    restRef.current = new RestSession(startedAtRef.current, minutes);
     // Metadata first: it has to be on the MediaItem when playback starts, or
     // the lock screen shows nothing and setting it later restarts the audio.
     getNightAudio()?.setNowPlaying(lead.title, "sleepcast", "", 0);
@@ -195,6 +216,14 @@ export default function App() {
       if (end === null) return;
       const left = (end - Date.now()) / 1000;
       if (left <= 0) { stopTick(); return; } // native performs the actual stop
+      // Purely observational: fed the current state, its return value is
+      // ignored here. Native (via onNightEnded/finishNight) is the only thing
+      // that ever ends or shortens a night — this only ever watches one.
+      restRef.current?.tick({
+        now: Date.now(),
+        hidden: appStateRef.current !== "active",
+        fadingOrDone: left <= FADE_SECONDS,
+      });
       // The same fade curve the web player uses, from the shared repo, purely
       // to reflect native's countdown/volume in the UI while foregrounded.
       // Native drives the real volume and the real stop now.

@@ -9,6 +9,9 @@ import { loadLastNight } from "../vendor/player/src/lib/store";
 // can seed a marker exactly as beginPlayback would, and assert it gets
 // cleared exactly as reconcileToLastNight would.
 import { saveMarker, loadMarker } from "../src/logic/nightmarker";
+// Real rest ledger module (not mocked) so the rest-detector wiring test below
+// can assert App actually appended a RestSession finish() to the ledger.
+import { loadNights } from "../vendor/player/src/lib/rest/ledger";
 
 installLocalStorage();
 
@@ -168,6 +171,26 @@ test("unmatched onNightEnded leaves the marker intact and writes nothing", async
   await act(async () => { mockAudio.fireEnded({ episodeId: "a", heardSeconds: 300 }); });
   expect(loadMarker()).not.toBeNull(); // marker survives for next-launch reconcile
   expect(loadLastNight()).toBeNull(); // the event wrote no ledger entry
+  act(() => { tree.unmount(); });
+});
+
+// Slice 3, Task 1: App owns a RestSession per night, fed from the 1s tick,
+// and finishes it into the rest ledger through the same finishNight funnel
+// onNightEnded/manual-stop already share.
+test("a finished night is recorded to the rest ledger", async () => {
+  mockAudio = freshAudio();
+  mockPoolResult = { pool: [{ id: "a", title: "A Quiet Night", url: "https://x/a.mp3", feedId: "f", date: "2024-01-01" }], feedTitles: { f: "F" }, errors: [] };
+  const before = loadNights().length;
+  let tree!: TestRenderer.ReactTestRenderer;
+  await act(async () => { tree = TestRenderer.create(<App />); });
+  await act(async () => {});
+  await act(async () => { tree.root.findByProps({ testID: "timer-5" }).props.onPress(); });
+  await act(async () => { tree.root.findByProps({ testID: "start-shuffle" }).props.onPress(); });
+  await act(async () => { mockAudio.fireEnded({ episodeId: "a", heardSeconds: 300 }); });
+  const nights = loadNights();
+  expect(nights.length).toBe(before + 1);
+  expect(nights[nights.length - 1].endedVia).toBe("faded");
+  expect(nights[nights.length - 1].timerMinutes).toBe(5);
   act(() => { tree.unmount(); });
 });
 
