@@ -12,7 +12,8 @@ import { saveMarker, loadMarker, clearMarker, reconcileToLastNight } from "./src
 import { getNightAudio } from "./src/specs/NativeNightAudio";
 import { effectiveVolume } from "./vendor/player/src/lib/engine";
 import { RestSession } from "./vendor/player/src/lib/rest/session";
-import { appendNight } from "./vendor/player/src/lib/rest/ledger";
+import { appendNight, loadQuietUntil } from "./vendor/player/src/lib/rest/ledger";
+import { isQuiet } from "./vendor/player/src/lib/rest/stepback";
 import { shouldSuggestGettingUp } from "./vendor/player/src/lib/rest/quarterhour";
 import { recordHeardPlay, saveLastNight, loadTimerMinutes, loadLastNight, loadState } from "./vendor/player/src/lib/store";
 import { HEARD_SEC } from "./vendor/player/src/lib/plays";
@@ -205,7 +206,7 @@ export default function App() {
     startedAtRef.current = Date.now();
     endAtRef.current = Date.now() + minutes * 60_000;
     restRef.current = new RestSession(startedAtRef.current, minutes);
-    quarterHourRef.current = loadState().settings.quarterHourRule;
+    quarterHourRef.current = loadState().settings.quarterHourRule && !isQuiet(loadQuietUntil(), Date.now());
     ruleSpentRef.current = false;
     // Metadata first: it has to be on the MediaItem when playback starts, or
     // the lock screen shows nothing and setting it later restarts the audio.
@@ -304,7 +305,7 @@ export default function App() {
         ) : showRest ? (
           <RestScreen onClose={() => setShowRest(false)} />
         ) : (
-          <SetupScreen onStart={onStart} onResume={onResume} resumeAvailable={!!resumeNight(loadTimerMinutes())} onOpenRest={() => setShowRest(true)} />
+          <SetupScreen onStart={onStart} onResume={onResume} resumeAvailable={!!resumeNight(loadTimerMinutes()) && !isQuiet(loadQuietUntil(), Date.now())} onOpenRest={() => setShowRest(true)} />
         )}
       </SafeAreaView>
     </SafeAreaProvider>

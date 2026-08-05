@@ -4,14 +4,15 @@ import React from "react";
 import TestRenderer, { act } from "react-test-renderer";
 // Real store module (not mocked) so the regression test below can assert on
 // what App actually persisted.
-import { loadLastNight, loadState, saveState } from "../vendor/player/src/lib/store";
+import { loadLastNight, loadState, saveState, saveLastNight } from "../vendor/player/src/lib/store";
 // Real nightmarker module (not mocked) so the reconcile-on-launch test below
 // can seed a marker exactly as beginPlayback would, and assert it gets
 // cleared exactly as reconcileToLastNight would.
 import { saveMarker, loadMarker } from "../src/logic/nightmarker";
 // Real rest ledger module (not mocked) so the rest-detector wiring test below
 // can assert App actually appended a RestSession finish() to the ledger.
-import { loadNights } from "../vendor/player/src/lib/rest/ledger";
+import { loadNights, saveQuietUntil } from "../vendor/player/src/lib/rest/ledger";
+import { quietUntilFrom } from "../vendor/player/src/lib/rest/stepback";
 import GettingUpScreen from "../src/screens/GettingUpScreen";
 
 installLocalStorage();
@@ -278,6 +279,19 @@ test("the quarter-hour rule stops the night and shows the getting-up screen", as
     expect(mockAudio.cancelTimer).toHaveBeenCalled();
     act(() => { tree.unmount(); });
   } finally { jest.useRealTimers(); }
+});
+
+test("quiet suppresses the resume affordance", async () => {
+  mockAudio = freshAudio();
+  mockPoolResult = { pool: [{ id: "a", title: "A", url: "https://x/a.mp3", feedId: "f", date: "2024-01-01" }], feedTitles: { f: "F" }, errors: [] };
+  // a resumable night exists...
+  saveLastNight({ pool: [{ id: "a", title: "A", url: "https://x/a.mp3", feedId: "f", date: "2024-01-01" } as any, { id: "b", title: "B", url: "https://x/b.mp3", feedId: "f", date: "2024-01-01" } as any], playedIds: ["a"], feedTitles: {}, artworkByFeedId: {}, skipIntroByFeedId: {}, endedVia: "faded", endedAt: Date.now(), wasVaried: false });
+  saveQuietUntil(quietUntilFrom(Date.now())); // ...but we're quiet
+  let tree!: TestRenderer.ReactTestRenderer;
+  await act(async () => { tree = TestRenderer.create(<App />); });
+  await act(async () => {});
+  expect(tree.root.findAllByProps({ testID: "start-resume" }).length).toBe(0);
+  act(() => { tree.unmount(); });
 });
 
 test("opening nights shows the rest screen and back returns to setup", async () => {
