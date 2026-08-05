@@ -46,6 +46,7 @@ import YoutubeIframe, {
   PLAYER_STATES,
   type YoutubeIframeRef,
 } from "react-native-youtube-iframe";
+import type { WebViewProps } from "react-native-webview";
 import type { CreatePlayerArgs, YTPlayerLike } from "../../vendor/player/src/lib/youtube-media";
 import { makeYtAdapter, type AsyncPlayerCtl } from "./ytPlayerAdapter";
 
@@ -89,10 +90,18 @@ export interface YouTubePlayerHandle {
 
 interface YouTubePlayerProps {
   height?: number;
+  /** Forwarded straight to the underlying react-native-webview instance
+   *  (react-native-youtube-iframe passes this prop through verbatim). Task 6
+   *  uses it to try to permit autoplay — `mediaPlaybackRequiresUserAction:
+   *  false` + `allowsInlineMediaPlayback: true` — since the device gate
+   *  found autoplay blocked without them. Still not guaranteed by every OS/
+   *  webview version, which is why Task 6 also renders a tap-to-begin
+   *  fallback rather than relying on this alone. */
+  webViewProps?: WebViewProps;
 }
 
 const YouTubePlayer = forwardRef<YouTubePlayerHandle, YouTubePlayerProps>(function YouTubePlayer(
-  { height = 220 },
+  { height = 220, webViewProps },
   ref,
 ) {
   const [videoId, setVideoId] = useState<string | undefined>(undefined);
@@ -200,6 +209,7 @@ const YouTubePlayer = forwardRef<YouTubePlayerHandle, YouTubePlayerProps>(functi
           videoId={videoId}
           play={play}
           volume={volume}
+          webViewProps={webViewProps}
           onReady={onReady}
           onChangeState={onChangeState}
           onError={onError}
