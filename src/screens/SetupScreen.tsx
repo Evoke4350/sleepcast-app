@@ -6,6 +6,8 @@ import {
 import { parseOpml, buildOpml } from "../platform/opml";
 import { nextTrim } from "../logic/trim";
 import type { AppState } from "../../vendor/player/src/lib/store";
+import { qualifiesForStepBack, isQuiet, quietUntilFrom } from "../../vendor/player/src/lib/rest/stepback";
+import { loadNights, loadQuietUntil, saveQuietUntil, loadStepBackAsked, markStepBackAsked } from "../../vendor/player/src/lib/rest/ledger";
 
 // All >= the vendor store's TIMER_MIN (5); a sub-minimum chip would start that
 // many minutes but silently persist as 5, so the selection wouldn't survive a
@@ -23,8 +25,20 @@ export default function SetupScreen({ onStart, onResume, resumeAvailable, onOpen
   const [state, setState] = useState<AppState>(() => loadState());
   const [url, setUrl] = useState("");
   const [minutes, setMinutes] = useState(state.settings.timerMinutes);
+  // Eligibility for the step-back offer, computed once on mount: not
+  // currently quiet, not asked within a quiet window of a previous ask, and
+  // the run itself qualifies (see vendor rest/stepback.ts).
+  const [showStepBack, setShowStepBack] = useState(() => {
+    const now = Date.now();
+    if (isQuiet(loadQuietUntil(), now)) return false;
+    const asked = loadStepBackAsked();
+    if (asked !== null && isQuiet(quietUntilFrom(asked), now)) return false;
+    return qualifiesForStepBack(loadNights());
+  });
 
   function persist(next: AppState) { saveState(next); setState(next); }
+  function acceptStepBack() { const now = Date.now(); saveQuietUntil(quietUntilFrom(now)); markStepBackAsked(now); setShowStepBack(false); }
+  function declineStepBack() { markStepBackAsked(Date.now()); setShowStepBack(false); }
 
   function toggleFeed(id: string, enabled: boolean) {
     persist({ ...state, feeds: state.feeds.map((f) => (f.id === id ? { ...f, enabled } : f)) });
@@ -56,6 +70,16 @@ export default function SetupScreen({ onStart, onResume, resumeAvailable, onOpen
 
   return (
     <ScrollView style={s.root} contentContainerStyle={s.body}>
+      {showStepBack && (
+        <View testID="stepback-offer" style={s.stepback}>
+          <Text style={s.sbTitle}>you've been falling asleep quickly for a while.</Text>
+          <Text style={s.sbBody}>you might not need us right now — we can stop nudging and stay out of the way for a month.</Text>
+          <View style={s.row}>
+            <TouchableOpacity testID="stepback-accept" style={s.btn} onPress={acceptStepBack}><Text style={s.btnT}>go quiet</Text></TouchableOpacity>
+            <TouchableOpacity testID="stepback-decline" style={s.btn} onPress={declineStepBack}><Text style={s.btnT}>not now</Text></TouchableOpacity>
+          </View>
+        </View>
+      )}
       <Text style={s.h}>feeds</Text>
       {state.feeds.map((f) => (
         <View key={f.id} style={s.feedRowContainer}>
@@ -96,6 +120,16 @@ export default function SetupScreen({ onStart, onResume, resumeAvailable, onOpen
         ))}
       </View>
 
+      <Text style={s.h}>get-up nudge</Text>
+      <View style={s.qhRow}>
+        <Text style={s.qhLabel}>stop & suggest getting up after 25 restless minutes</Text>
+        <Switch
+          testID="quarterhour-toggle"
+          value={state.settings.quarterHourRule}
+          onValueChange={(v) => persist({ ...state, settings: { ...state.settings, quarterHourRule: v } })}
+        />
+      </View>
+
       <Text style={s.h}>start</Text>
       <View style={s.row}>
         <TouchableOpacity testID="start-shuffle" style={s.btn} onPress={() => onStart("shuffle", minutes)}><Text style={s.btnT}>shuffle</Text></TouchableOpacity>
@@ -130,10 +164,15 @@ const s = StyleSheet.create({
   addRow: { flexDirection: "row", gap: 8, alignItems: "center" },
   input: { flex: 1, color: "#d9c9a8", borderWidth: 1, borderColor: "#3a3325", borderRadius: 8, paddingHorizontal: 12, paddingVertical: 8 },
   row: { flexDirection: "row", gap: 10, flexWrap: "wrap" },
+  qhRow: { flexDirection: "row", alignItems: "center", gap: 10 },
+  qhLabel: { color: "#c8c0b0", flex: 1, fontSize: 13 },
   chip: { borderWidth: 1, borderColor: "#3a3325", borderRadius: 999, paddingHorizontal: 14, paddingVertical: 8 },
   chipOn: { borderColor: "#d9c9a8" },
   btn: { borderWidth: 1, borderColor: "#3a3325", borderRadius: 999, paddingHorizontal: 18, paddingVertical: 10 },
   btnT: { color: "#d9c9a8", fontSize: 14 },
   nightsLink: { marginTop: 12 },
   nightsText: { color: "#6e5d44", fontSize: 13 },
+  stepback: { alignSelf: "stretch", borderWidth: 1, borderColor: "#3a3325", borderRadius: 12, backgroundColor: "#171310", padding: 16, gap: 8 },
+  sbTitle: { color: "#d9c9a8", fontSize: 14 },
+  sbBody: { color: "#8a7a5c", fontSize: 12 },
 });

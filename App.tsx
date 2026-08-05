@@ -12,13 +12,16 @@ import { saveMarker, loadMarker, clearMarker, reconcileToLastNight } from "./src
 import { getNightAudio } from "./src/specs/NativeNightAudio";
 import { effectiveVolume } from "./vendor/player/src/lib/engine";
 import { RestSession } from "./vendor/player/src/lib/rest/session";
-import { appendNight } from "./vendor/player/src/lib/rest/ledger";
+import { appendNight, loadQuietUntil } from "./vendor/player/src/lib/rest/ledger";
+import { isQuiet } from "./vendor/player/src/lib/rest/stepback";
+import { shouldSuggestGettingUp } from "./vendor/player/src/lib/rest/quarterhour";
 import { recordHeardPlay, saveLastNight, loadTimerMinutes, loadLastNight, loadState } from "./vendor/player/src/lib/store";
 import { HEARD_SEC } from "./vendor/player/src/lib/plays";
 import type { Episode } from "./vendor/player/src/lib/engine";
 import SetupScreen from "./src/screens/SetupScreen";
 import PlayerScreen from "./src/screens/PlayerScreen";
 import RestScreen from "./src/screens/RestScreen";
+import GettingUpScreen from "./src/screens/GettingUpScreen";
 
 // Must run before anything touches the shared code, which reads localStorage
 // synchronously at module scope in places.
@@ -35,6 +38,7 @@ export default function App() {
   const [volume, setVolume] = useState(1);
   const [playing, setPlaying] = useState(false);
   const [showRest, setShowRest] = useState(false);
+  const [gettingUp, setGettingUp] = useState(false);
 
   const endAtRef = useRef<number | null>(null);
   const tickRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -47,6 +51,12 @@ export default function App() {
   const restRef = useRef<RestSession | null>(null);
   const appStateRef = useRef(AppState.currentState);
   const trimRef = useRef(1);
+  // Opt-in quarter-hour rule (see vendor rest/quarterhour.ts): read fresh from
+  // settings at play time into a ref (not state) so the 1s interval can check
+  // it without becoming a render dependency, and latched so it can fire at
+  // most once per night even though the interval keeps ticking afterward.
+  const quarterHourRef = useRef(false);
+  const ruleSpentRef = useRef(false);
 
   // If the OS killed the process mid-night, onNightEnded never fired and the
   // ledger was never written. A marker persisted at play time (see
@@ -196,6 +206,8 @@ export default function App() {
     startedAtRef.current = Date.now();
     endAtRef.current = Date.now() + minutes * 60_000;
     restRef.current = new RestSession(startedAtRef.current, minutes);
+    quarterHourRef.current = loadState().settings.quarterHourRule && !isQuiet(loadQuietUntil(), Date.now());
+    ruleSpentRef.current = false;
     // Metadata first: it has to be on the MediaItem when playback starts, or
     // the lock screen shows nothing and setting it later restarts the audio.
     getNightAudio()?.setNowPlaying(lead.title, "sleepcast", "", 0);
@@ -238,6 +250,20 @@ export default function App() {
       // now.
       setVolume(effectiveVolume(left, FADE_SECONDS, trimRef.current));
       setRemaining(left);
+      // Opt-in stimulus control: if the listener has been restless-and-
+      // fiddling for ~25 minutes, stop the night (same path a manual stop
+      // takes) and suggest getting up. Latched via ruleSpentRef so it can
+      // only ever fire once per night, even though the interval keeps
+      // ticking after endSession() has torn playback down.
+      if (quarterHourRef.current && !ruleSpentRef.current && restRef.current) {
+        const now = Date.now();
+        const w = restRef.current.wakefulness(now);
+        if (shouldSuggestGettingUp({ elapsedMs: now - startedAtRef.current, ...w })) {
+          ruleSpentRef.current = true;
+          setGettingUp(true);
+          endSession();
+        }
+      }
     }, 1000);
   }
 
@@ -272,12 +298,14 @@ export default function App() {
             <ActivityIndicator color="#6e5d44" />
             <Text style={s.dim} testID="status">gathering episodes…</Text>
           </View>
+        ) : gettingUp ? (
+          <GettingUpScreen onDismiss={() => setGettingUp(false)} />
         ) : playing && now ? (
           <PlayerScreen title={now.title} remaining={remaining} volume={volume} onStop={() => endSession()} onInteract={() => restRef.current?.noteInteraction()} />
         ) : showRest ? (
           <RestScreen onClose={() => setShowRest(false)} />
         ) : (
-          <SetupScreen onStart={onStart} onResume={onResume} resumeAvailable={!!resumeNight(loadTimerMinutes())} onOpenRest={() => setShowRest(true)} />
+          <SetupScreen onStart={onStart} onResume={onResume} resumeAvailable={!!resumeNight(loadTimerMinutes()) && !isQuiet(loadQuietUntil(), Date.now())} onOpenRest={() => setShowRest(true)} />
         )}
       </SafeAreaView>
     </SafeAreaProvider>

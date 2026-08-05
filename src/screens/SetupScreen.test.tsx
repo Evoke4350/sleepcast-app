@@ -4,6 +4,8 @@ import React from "react";
 import TestRenderer, { act } from "react-test-renderer";
 import SetupScreen from "./SetupScreen";
 import { loadState } from "../../vendor/player/src/lib/store";
+import { appendNight } from "../../vendor/player/src/lib/rest/ledger";
+import { loadQuietUntil, loadStepBackAsked } from "../../vendor/player/src/lib/rest/ledger";
 
 installLocalStorage();
 
@@ -49,4 +51,61 @@ test("stepping a feed's trim up persists via nextTrim", () => {
   act(() => { find(tree, "trim-up-swm").props.onPress(); });
   expect(loadState().settings.feedTrim.swm).toBe(1.25);
   expect(find(tree, "trim-value-swm").props.children).toContain("1.25");
+});
+
+test("the quarter-hour toggle persists the setting", () => {
+  let tree!: TestRenderer.ReactTestRenderer;
+  act(() => { tree = TestRenderer.create(<SetupScreen onStart={() => {}} />); });
+  act(() => { find(tree, "quarterhour-toggle").props.onValueChange(true); });
+  expect(loadState().settings.quarterHourRule).toBe(true);
+});
+
+function seedGoodRun() {
+  // 12 nights all slept fast (well under 20 min), no self-label "awake"
+  for (let i = 0; i < 12; i++) {
+    appendNight({ startedAt: 1000 + i, timerMinutes: 45, endedVia: "faded",
+      sleptAtMs: 8 * 60_000, timeToSleepMs: 8 * 60_000, interactions: 1, detector: "inference" });
+  }
+}
+
+// findAllByProps({testID}) double-counts a plain View here the same way it
+// does elsewhere in this codebase (see __tests__/App.night.test.tsx): RN's
+// View is a forwardRef wrapping a host node of the same name, so a deep
+// props-only query matches both the wrapper and the host. findByProps
+// (singular) forces deep:false and stops at the first match, so it doesn't
+// double-count — use it as a presence check instead of counting.
+function hasStepBackOffer(tree: TestRenderer.ReactTestRenderer): boolean {
+  try { tree.root.findByProps({ testID: "stepback-offer" }); return true; } catch { return false; }
+}
+
+test("step-back offer appears only after a qualifying run", () => {
+  localStorage.clear();
+  let tree!: TestRenderer.ReactTestRenderer;
+  act(() => { tree = TestRenderer.create(<SetupScreen onStart={() => {}} />); });
+  expect(hasStepBackOffer(tree)).toBe(false); // no history
+  seedGoodRun();
+  act(() => { tree = TestRenderer.create(<SetupScreen onStart={() => {}} />); });
+  expect(hasStepBackOffer(tree)).toBe(true);
+});
+
+test("accepting step-back goes quiet and records the ask", () => {
+  localStorage.clear();
+  seedGoodRun();
+  let tree!: TestRenderer.ReactTestRenderer;
+  act(() => { tree = TestRenderer.create(<SetupScreen onStart={() => {}} />); });
+  act(() => { tree.root.findByProps({ testID: "stepback-accept" }).props.onPress(); });
+  expect(loadQuietUntil()).not.toBeNull();
+  expect(loadStepBackAsked()).not.toBeNull();
+  expect(hasStepBackOffer(tree)).toBe(false); // hidden after
+});
+
+test("declining step-back records the ask but stays loud", () => {
+  localStorage.clear();
+  seedGoodRun();
+  let tree!: TestRenderer.ReactTestRenderer;
+  act(() => { tree = TestRenderer.create(<SetupScreen onStart={() => {}} />); });
+  act(() => { tree.root.findByProps({ testID: "stepback-decline" }).props.onPress(); });
+  expect(loadQuietUntil()).toBeNull();
+  expect(loadStepBackAsked()).not.toBeNull();
+  expect(hasStepBackOffer(tree)).toBe(false); // card hides after declining too
 });
