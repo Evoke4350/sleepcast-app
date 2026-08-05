@@ -96,6 +96,16 @@ export default function SetupScreen({ onStart, onResume, resumeAvailable, onOpen
         ))}
       </View>
 
+      <Text style={s.h}>get-up nudge</Text>
+      <View style={s.qhRow}>
+        <Text style={s.qhLabel}>stop & suggest getting up after 25 restless minutes</Text>
+        <Switch
+          testID="quarterhour-toggle"
+          value={state.settings.quarterHourRule}
+          onValueChange={(v) => persist({ ...state, settings: { ...state.settings, quarterHourRule: v } })}
+        />
+      </View>
+
       <Text style={s.h}>start</Text>
       <View style={s.row}>
         <TouchableOpacity testID="start-shuffle" style={s.btn} onPress={() => onStart("shuffle", minutes)}><Text style={s.btnT}>shuffle</Text></TouchableOpacity>
@@ -130,6 +140,8 @@ const s = StyleSheet.create({
   addRow: { flexDirection: "row", gap: 8, alignItems: "center" },
   input: { flex: 1, color: "#d9c9a8", borderWidth: 1, borderColor: "#3a3325", borderRadius: 8, paddingHorizontal: 12, paddingVertical: 8 },
   row: { flexDirection: "row", gap: 10, flexWrap: "wrap" },
+  qhRow: { flexDirection: "row", alignItems: "center", gap: 10 },
+  qhLabel: { color: "#c8c0b0", flex: 1, fontSize: 13 },
   chip: { borderWidth: 1, borderColor: "#3a3325", borderRadius: 999, paddingHorizontal: 14, paddingVertical: 8 },
   chipOn: { borderColor: "#d9c9a8" },
   btn: { borderWidth: 1, borderColor: "#3a3325", borderRadius: 999, paddingHorizontal: 18, paddingVertical: 10 },

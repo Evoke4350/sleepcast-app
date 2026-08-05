@@ -12,6 +12,7 @@ import { saveMarker, loadMarker } from "../src/logic/nightmarker";
 // Real rest ledger module (not mocked) so the rest-detector wiring test below
 // can assert App actually appended a RestSession finish() to the ledger.
 import { loadNights } from "../vendor/player/src/lib/rest/ledger";
+import GettingUpScreen from "../src/screens/GettingUpScreen";
 
 installLocalStorage();
 
@@ -241,6 +242,42 @@ test("reconciles a killed night's marker on launch when nothing is playing", asy
   expect(last?.endedVia).toBe("faded");
   expect(loadMarker()).toBeNull();
   act(() => { tree.unmount(); });
+});
+
+// Slice 5, Task 1: the opt-in quarter-hour rule — once a night has 3+ touches
+// and the most recent one is inside the "just settled" window while total
+// elapsed time has crossed the 25-minute threshold, App should stop the
+// night (through the same endSession() a manual stop uses) and show the
+// getting-up screen, exactly once per night.
+test("the quarter-hour rule stops the night and shows the getting-up screen", async () => {
+  mockAudio = freshAudio();
+  mockPoolResult = { pool: [{ id: "a", title: "A", url: "https://x/a.mp3", feedId: "f", date: "2024-01-01" }], feedTitles: { f: "F" }, errors: [] };
+  const s = loadState();
+  saveState({ ...s, settings: { ...s.settings, quarterHourRule: true } });
+  let tree!: TestRenderer.ReactTestRenderer;
+  jest.useFakeTimers();
+  try {
+    await act(async () => { tree = TestRenderer.create(<App />); });
+    await act(async () => {});
+    await act(async () => { tree.root.findByProps({ testID: "timer-45" }).props.onPress(); });
+    await act(async () => { tree.root.findByProps({ testID: "start-shuffle" }).props.onPress(); });
+    // simulate 3 restless touches, then advance past the 25-min threshold with a recent touch
+    const root = tree.root.findByProps({ testID: "player-root" });
+    await act(async () => { root.props.onStartShouldSetResponderCapture(); root.props.onStartShouldSetResponderCapture(); root.props.onStartShouldSetResponderCapture(); });
+    await act(async () => { await jest.advanceTimersByTimeAsync(26 * 60_000); });
+    // a fresh touch inside the recent window, then one more interval tick
+    await act(async () => { tree.root.findByProps({ testID: "player-root" }).props.onStartShouldSetResponderCapture(); });
+    await act(async () => { await jest.advanceTimersByTimeAsync(1000); });
+    // findAllByProps({testID}) double-counts here: RN's View is a forwardRef
+    // wrapping a host node of the same name, so a props-only query (unlike
+    // findByProps, which forces deep:false) matches both the wrapper and the
+    // host. findAllByType against the screen component itself counts actual
+    // mounts, which is what "fires once per night" means here.
+    expect(tree.root.findAllByType(GettingUpScreen).length).toBe(1);
+    expect(tree.root.findByProps({ testID: "gettingup" })).toBeTruthy();
+    expect(mockAudio.cancelTimer).toHaveBeenCalled();
+    act(() => { tree.unmount(); });
+  } finally { jest.useRealTimers(); }
 });
 
 test("opening nights shows the rest screen and back returns to setup", async () => {

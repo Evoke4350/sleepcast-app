@@ -50,3 +50,10 @@ test("stepping a feed's trim up persists via nextTrim", () => {
   expect(loadState().settings.feedTrim.swm).toBe(1.25);
   expect(find(tree, "trim-value-swm").props.children).toContain("1.25");
 });
+
+test("the quarter-hour toggle persists the setting", () => {
+  let tree!: TestRenderer.ReactTestRenderer;
+  act(() => { tree = TestRenderer.create(<SetupScreen onStart={() => {}} />); });
+  act(() => { find(tree, "quarterhour-toggle").props.onValueChange(true); });
+  expect(loadState().settings.quarterHourRule).toBe(true);
+});
