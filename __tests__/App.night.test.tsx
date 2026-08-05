@@ -15,6 +15,15 @@ import { loadNights, saveQuietUntil } from "../vendor/player/src/lib/rest/ledger
 import { quietUntilFrom } from "../vendor/player/src/lib/rest/stepback";
 import GettingUpScreen from "../src/screens/GettingUpScreen";
 
+// YouTubeNightScreen pulls in a WebView-backed player; mocking it here keeps
+// this file's job to routing (podcast vs. YouTube), not the screen's own
+// internals (those are covered by YouTubeNightScreen's own tests).
+jest.mock("../src/screens/YouTubeNightScreen", () => {
+  const { View } = require("react-native");
+  return { __esModule: true, default: (_props: any) => <View testID="yt-night" /> };
+});
+import YouTubeNightScreen from "../src/screens/YouTubeNightScreen";
+
 installLocalStorage();
 
 // A mutable stub the tests drive. `getNightAudio()` returns whatever
@@ -315,6 +324,41 @@ test("quiet suppresses the resume affordance", async () => {
   await act(async () => { tree = TestRenderer.create(<App />); });
   await act(async () => {});
   expect(tree.root.findAllByProps({ testID: "start-resume" }).length).toBe(0);
+  act(() => { tree.unmount(); });
+});
+
+// Slice 6, Task 7: a lineup whose lead is a YouTube episode routes to
+// YouTubeNightScreen instead of the native beginPlayback/PlayerScreen path —
+// scheduleFadeAndStop is a podcast-only concept and must never fire for a
+// YouTube night.
+test("a YouTube-lead lineup routes to YouTubeNightScreen, not PlayerScreen", async () => {
+  mockAudio = freshAudio();
+  mockPoolResult = {
+    pool: [{ id: "yt1", title: "A YouTube Night", url: "", youtubeId: "abc123", feedId: "f", date: "2024-01-01" }],
+    feedTitles: { f: "F" }, errors: [],
+  };
+  let tree!: TestRenderer.ReactTestRenderer;
+  await act(async () => { tree = TestRenderer.create(<App />); });
+  await act(async () => {});
+  await act(async () => { tree.root.findByProps({ testID: "timer-5" }).props.onPress(); });
+  await act(async () => { tree.root.findByProps({ testID: "start-shuffle" }).props.onPress(); });
+  expect(tree.root.findAllByType(YouTubeNightScreen).length).toBe(1);
+  expect(tree.root.findAllByProps({ testID: "nowPlaying" }).length).toBe(0);
+  expect(mockAudio.scheduleFadeAndStop).not.toHaveBeenCalled();
+  act(() => { tree.unmount(); });
+});
+
+test("a podcast lineup still routes to PlayerScreen, not YouTubeNightScreen", async () => {
+  mockAudio = freshAudio();
+  mockPoolResult = { pool: [{ id: "a", title: "A Quiet Night", url: "https://x/a.mp3", feedId: "f", date: "2024-01-01" }], feedTitles: { f: "F" }, errors: [] };
+  let tree!: TestRenderer.ReactTestRenderer;
+  await act(async () => { tree = TestRenderer.create(<App />); });
+  await act(async () => {});
+  await act(async () => { tree.root.findByProps({ testID: "timer-5" }).props.onPress(); });
+  await act(async () => { tree.root.findByProps({ testID: "start-shuffle" }).props.onPress(); });
+  expect(tree.root.findByProps({ testID: "nowPlaying" }).props.children).toBe("A Quiet Night");
+  expect(tree.root.findAllByType(YouTubeNightScreen).length).toBe(0);
+  expect(mockAudio.scheduleFadeAndStop).toHaveBeenCalled();
   act(() => { tree.unmount(); });
 });
 

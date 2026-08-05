@@ -18,10 +18,12 @@ import { shouldSuggestGettingUp } from "./vendor/player/src/lib/rest/quarterhour
 import { recordHeardPlay, saveLastNight, loadTimerMinutes, loadLastNight, loadState } from "./vendor/player/src/lib/store";
 import { HEARD_SEC } from "./vendor/player/src/lib/plays";
 import type { Episode } from "./vendor/player/src/lib/engine";
+import { isYouTubeLineup } from "./vendor/player/src/lib/youtube-night";
 import SetupScreen from "./src/screens/SetupScreen";
 import PlayerScreen from "./src/screens/PlayerScreen";
 import RestScreen from "./src/screens/RestScreen";
 import GettingUpScreen from "./src/screens/GettingUpScreen";
+import YouTubeNightScreen from "./src/screens/YouTubeNightScreen";
 
 // Must run before anything touches the shared code, which reads localStorage
 // synchronously at module scope in places.
@@ -39,6 +41,12 @@ export default function App() {
   const [playing, setPlaying] = useState(false);
   const [showRest, setShowRest] = useState(false);
   const [gettingUp, setGettingUp] = useState(false);
+  // A YouTube-lead lineup never touches beginPlayback/PlayerScreen — the
+  // native fade/stop timer is a podcast-only concept (WebView playback is
+  // opaque to native). Set instead of started, this routes straight to
+  // YouTubeNightScreen, which owns its own JS-driven fade/timer/skip. Cleared
+  // back to setup by that screen's onEnd.
+  const [ytSession, setYtSession] = useState<{ lineup: Episode[]; minutes: number; trim: number } | null>(null);
 
   const endAtRef = useRef<number | null>(null);
   const tickRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -274,6 +282,11 @@ export default function App() {
     lineupRef.current = r.lineup;
     playedIdsRef.current = [];
     variedRef.current = r.wasVaried;
+    if (isYouTubeLineup([r.lead])) {
+      const trim = loadState().settings.feedTrim[r.lead.feedId] ?? 1;
+      setYtSession({ lineup: r.lineup, minutes, trim });
+      return;
+    }
     await beginPlayback(r.lead, minutes);
   }
 
@@ -284,6 +297,15 @@ export default function App() {
     lineupRef.current = last.pool;
     playedIdsRef.current = [...last.playedIds];
     variedRef.current = last.wasVaried;
+    // Currently unreachable: YouTubeNightScreen never calls saveLastNight,
+    // so `last` (from loadLastNight()) can never be a YouTube-lead night —
+    // resume-after-fade for YouTube is deferred. Kept for when it lands,
+    // rather than left to silently do the wrong thing if it does.
+    if (isYouTubeLineup([r.lead])) {
+      const trim = loadState().settings.feedTrim[r.lead.feedId] ?? 1;
+      setYtSession({ lineup: last.pool, minutes: r.minutes, trim });
+      return;
+    }
     await beginPlayback(r.lead, r.minutes);
   }
 
@@ -300,6 +322,13 @@ export default function App() {
           </View>
         ) : gettingUp ? (
           <GettingUpScreen onDismiss={() => setGettingUp(false)} />
+        ) : ytSession ? (
+          <YouTubeNightScreen
+            lineup={ytSession.lineup}
+            minutes={ytSession.minutes}
+            trim={ytSession.trim}
+            onEnd={() => setYtSession(null)}
+          />
         ) : playing && now ? (
           <PlayerScreen title={now.title} remaining={remaining} volume={volume} onStop={() => endSession()} onInteract={() => restRef.current?.noteInteraction()} />
         ) : showRest ? (

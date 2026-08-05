@@ -30,6 +30,54 @@ jest.mock(
   () => require('react-native-safe-area-context/jest/mock.tsx').default,
 );
 
+// react-native-youtube-iframe wraps react-native-webview, whose entry file
+// ships ESM (`import WebView from './lib/WebView'`) that the preset's
+// transform doesn't touch (see transformIgnorePatterns in jest.config.js) —
+// requiring it verbatim throws "Cannot use import statement outside a
+// module" before a single test runs. A real WebView also has nothing to
+// render in a jest process: no native view manager, no network, no YouTube
+// iframe. So the whole package is swapped for a stub here (same move as the
+// MMKV/SafeAreaProvider mocks above) rather than fighting the transform.
+// PLAYER_STATES/PLAYER_ERRORS are copied by value from the library's
+// index.d.ts — src/youtube/YouTubePlayer.tsx indexes STATE_CODES/ERROR_CODES
+// record objects with them at module scope, so the mock's strings have to
+// match the real library's exactly or that indexing silently produces
+// `undefined` codes.
+jest.mock('react-native-youtube-iframe', () => {
+  const React = require('react');
+  const PLAYER_STATES = {
+    ENDED: 'ended',
+    PAUSED: 'paused',
+    PLAYING: 'playing',
+    UNSTARTED: 'unstarted',
+    BUFFERING: 'buffering',
+    VIDEO_CUED: 'video cued',
+  };
+  const PLAYER_ERRORS = {
+    HTML5_ERROR: 'HTML5_error',
+    VIDEO_NOT_FOUND: 'video_not_found',
+    EMBED_NOT_ALLOWED: 'embed_not_allowed',
+    INVALID_PARAMETER: 'invalid_parameter',
+  };
+  // Never actually driven in tests — YouTubeNightScreen's tests inject a fake
+  // createPlayer that bypasses this component's ref entirely (see its own
+  // report/comments) — so this only has to exist, not behave.
+  const YoutubeIframe = React.forwardRef(function MockYoutubeIframe(_props, ref) {
+    React.useImperativeHandle(ref, () => ({
+      getCurrentTime: async () => 0,
+      getDuration: async () => 0,
+      getVideoUrl: async () => '',
+      isMuted: async () => false,
+      getVolume: async () => 0,
+      getPlaybackRate: async () => 1,
+      getAvailablePlaybackRates: async () => [1],
+      seekTo: () => {},
+    }));
+    return null;
+  });
+  return { __esModule: true, default: YoutubeIframe, PLAYER_STATES, PLAYER_ERRORS };
+});
+
 // Install localStorage polyfill after mocks are set up, so that shared player
 // code can use it synchronously without async setup.
 // Jest's React Native preset provides an empty localStorage, so delete it first.
