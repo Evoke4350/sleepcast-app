@@ -18,6 +18,7 @@ import { HEARD_SEC } from "./vendor/player/src/lib/plays";
 import type { Episode } from "./vendor/player/src/lib/engine";
 import SetupScreen from "./src/screens/SetupScreen";
 import PlayerScreen from "./src/screens/PlayerScreen";
+import RestScreen from "./src/screens/RestScreen";
 
 // Must run before anything touches the shared code, which reads localStorage
 // synchronously at module scope in places.
@@ -33,6 +34,7 @@ export default function App() {
   const [remaining, setRemaining] = useState(0);
   const [volume, setVolume] = useState(1);
   const [playing, setPlaying] = useState(false);
+  const [showRest, setShowRest] = useState(false);
 
   const endAtRef = useRef<number | null>(null);
   const tickRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -208,6 +210,7 @@ export default function App() {
       lineup: lineupRef.current, playedIds: playedIdsRef.current,
       feedTitles: feedTitlesRef.current, wasVaried: variedRef.current,
     });
+    setShowRest(false);
     setPlaying(true);
 
     stopTick();
@@ -265,8 +268,10 @@ export default function App() {
           </View>
         ) : playing && now ? (
           <PlayerScreen title={now.title} remaining={remaining} volume={volume} onStop={() => endSession()} onInteract={() => restRef.current?.noteInteraction()} />
+        ) : showRest ? (
+          <RestScreen onClose={() => setShowRest(false)} />
         ) : (
-          <SetupScreen onStart={onStart} onResume={onResume} resumeAvailable={!!resumeNight(loadTimerMinutes())} />
+          <SetupScreen onStart={onStart} onResume={onResume} resumeAvailable={!!resumeNight(loadTimerMinutes())} onOpenRest={() => setShowRest(true)} />
         )}
       </SafeAreaView>
     </SafeAreaProvider>

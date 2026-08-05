@@ -212,3 +212,18 @@ test("reconciles a killed night's marker on launch when nothing is playing", asy
   expect(loadMarker()).toBeNull();
   act(() => { tree.unmount(); });
 });
+
+test("opening nights shows the rest screen and back returns to setup", async () => {
+  mockAudio = freshAudio();
+  mockPoolResult = { pool: [{ id: "a", title: "A", url: "https://x/a.mp3", feedId: "f", date: "2024-01-01" }], feedTitles: { f: "F" }, errors: [] };
+  let tree!: TestRenderer.ReactTestRenderer;
+  await act(async () => { tree = TestRenderer.create(<App />); });
+  await act(async () => {});
+  await act(async () => { tree.root.findByProps({ testID: "open-rest" }).props.onPress(); });
+  // Verify RestScreen is showing by checking rest-back exists
+  expect(() => tree.root.findByProps({ testID: "rest-back" })).not.toThrow();
+  await act(async () => { tree.root.findByProps({ testID: "rest-back" }).props.onPress(); });
+  // Verify back to SetupScreen by checking open-rest exists
+  expect(() => tree.root.findByProps({ testID: "open-rest" })).not.toThrow();
+  act(() => { tree.unmount(); });
+});
