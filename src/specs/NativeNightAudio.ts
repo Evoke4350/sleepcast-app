@@ -36,7 +36,7 @@ export interface Spec extends TurboModule {
   /** Start the authoritative sleep timer. Native fades volume over the final
    *  fadeSeconds and stops at durationSeconds, whether or not JS is awake.
    *  Call once, right after play(). */
-  scheduleFadeAndStop(episodeId: string, durationSeconds: number, fadeSeconds: number): void;
+  scheduleFadeAndStop(episodeId: string, durationSeconds: number, fadeSeconds: number, trim: number): void;
   /** Cancel a running timer (manual stop, or starting a new night). */
   cancelTimer(): void;
   /** Fires once when the native timer reaches zero and stops playback. */
