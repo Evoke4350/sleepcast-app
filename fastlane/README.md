@@ -17,17 +17,19 @@ fastlane/metadata/android/en-US/
 
 ## Icon
 
-The launcher icon is a VectorDrawable (see `assets/logo.svg` for the master and
-`android/app/src/main/res/drawable/ic_launcher_foreground.xml`). F-Droid falls
-back to the icon in the APK when `images/icon.png` is absent, so a PNG here is
-optional. To add one, rasterize `assets/logo.svg` to a 512×512 PNG, e.g.:
+`images/icon.png` is the 512×512 listing icon (a full-bleed square: crescent
+moon + stars on the night-dark tile), rasterized from the master `assets/logo.svg`.
+The launcher icon itself is a VectorDrawable (`assets/logo.svg` master →
+`android/app/src/main/res/drawable/ic_launcher_foreground.xml`).
+
+To regenerate the PNG from the SVG:
 
 ```
-rsvg-convert -w 512 -h 512 assets/logo.svg > fastlane/metadata/android/en-US/images/icon.png
-# or: inkscape assets/logo.svg -w 512 -h 512 -o .../icon.png
+# macOS (no extra tools): render a 512px square copy
+sed 's/width="108" height="108"/width="512" height="512"/' assets/logo.svg > /tmp/logo512.svg
+qlmanage -t -s 512 -o /tmp /tmp/logo512.svg && mv /tmp/logo512.svg.png fastlane/metadata/android/en-US/images/icon.png
+# or with librsvg:  rsvg-convert -w 512 -h 512 assets/logo.svg > .../images/icon.png
 ```
-
-(Left out of the repo because this build host had no SVG rasterizer.)
 
 ## Build recipe
 
