@@ -44,8 +44,30 @@ qlmanage -t -s 1024 -o /tmp assets/feature-graphic.svg
 sips -c 500 1024 /tmp/feature-graphic.svg.png --out fastlane/metadata/android/en-US/images/featureGraphic.png
 ```
 
-## Build recipe
+## Build recipe & submission (current, 2026)
 
 The fdroiddata build recipe (server side, not in this repo) starts from
-`docs/fdroid/com.sleepcastapp.foss.yml`. Tag the release commit `v1.0-foss`
-and bump `versionCode`/`changelogs` per release.
+`docs/fdroid/com.sleepcastapp.foss.yml`. Fastlane assets (this tree) are read by
+F-Droid from the app repo at the tagged commit, so they must be committed on the
+release tag.
+
+Submit via a **merge request to `gitlab.com/fdroid/fdroiddata`** (RFP is only for
+"please package this" requests):
+
+1. Tag the release: `git tag v1.0-foss && git push origin v1.0-foss` (bump
+   `versionCode` + add `changelogs/<code>.txt` per release).
+2. Fork fdroiddata; add the recipe as `metadata/com.sleepcastapp.foss.yml` on a
+   branch named `com.sleepcastapp.foss` (not `master`).
+3. Finalize locally with `fdroidserver` (+ Docker): `fdroid lint`,
+   `fdroid rewritemeta`, then `fdroid build -l com.sleepcastapp.foss` — iterate
+   the `scanignore` list until the build passes, and confirm the `output:` APK
+   name (make the release **unsigned** — drop the debug signingConfig — since
+   F-Droid signs with its own key).
+4. Push to your fork, make its **CI pipeline pass**, then open the MR (commit
+   subject `New App: com.sleepcastapp.foss`, fill the MR template).
+
+Recipe notes reflect the current RN pattern: Node comes from a pinned tarball +
+sha256 in `sudo:` (the buildserver's apt Node is too old for RN 0.86), and
+node_modules prebuilts are handled with `rm`/`scandelete` + a `scanignore`
+whitelist. See the live reference recipe `metadata/com.mattermost.rnbeta.yml` in
+fdroiddata.
