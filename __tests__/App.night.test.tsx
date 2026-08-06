@@ -315,14 +315,22 @@ test("all night starts with no fade/stop timer and the player shows 'all night'"
 });
 
 test("all night auto-advances to another pick when a track ends naturally", async () => {
-  const tree = await startAllNightSpread();
-  const before = tree.root.findByProps({ testID: "nowPlaying" }).props.children;
-  const playsBefore = mockAudio.play.mock.calls.length;
-  await act(async () => { mockAudio.fireTrackEnded({ episodeId: "whatever" }); });
-  expect(mockAudio.play.mock.calls.length).toBeGreaterThan(playsBefore); // advanced
-  expect(mockAudio.scheduleFadeAndStop).not.toHaveBeenCalled();          // still no timer
-  expect(tree.root.findByProps({ testID: "nowPlaying" }).props.children).not.toBe(before);
-  act(() => { tree.unmount(); });
+  let nowValue = 1_000_000;
+  const spy = jest.spyOn(Date, "now").mockImplementation(() => nowValue);
+  let tree!: TestRenderer.ReactTestRenderer;
+  try {
+    tree = await startAllNightSpread(); // starts at t=1_000_000
+    const before = tree.root.findByProps({ testID: "nowPlaying" }).props.children;
+    const playsBefore = mockAudio.play.mock.calls.length;
+    nowValue = 1_003_000; // 3s later — past the instant-end floor
+    await act(async () => { mockAudio.fireTrackEnded({ episodeId: "whatever" }); });
+    expect(mockAudio.play.mock.calls.length).toBeGreaterThan(playsBefore); // advanced
+    expect(mockAudio.scheduleFadeAndStop).not.toHaveBeenCalled();          // still no timer
+    expect(tree.root.findByProps({ testID: "nowPlaying" }).props.children).not.toBe(before);
+  } finally {
+    spy.mockRestore();
+    act(() => { tree.unmount(); });
+  }
 });
 
 test("all night + shuffle replays the episode when it ends (no silence)", async () => {
