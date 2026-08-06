@@ -19,7 +19,7 @@ import { recordHeardPlay, saveLastNight, loadTimerMinutes, loadLastNight, loadSt
 import { HEARD_SEC } from "./vendor/player/src/lib/plays";
 import type { Episode } from "./vendor/player/src/lib/engine";
 import { isYouTubeLineup, nextPlayable } from "./vendor/player/src/lib/youtube-night";
-import SetupScreen, { ALL_NIGHT } from "./src/screens/SetupScreen";
+import SetupScreen, { ALL_NIGHT, isAllNightSelected } from "./src/screens/SetupScreen";
 import PlayerScreen from "./src/screens/PlayerScreen";
 import RestScreen from "./src/screens/RestScreen";
 import GettingUpScreen from "./src/screens/GettingUpScreen";
@@ -35,6 +35,10 @@ const FADE_SECONDS = 60;
 // reconcile marker (which caps heard time by it) so a killed all-night night
 // reconciles the current episode without a real timer. 10 hours covers a night.
 const ALL_NIGHT_CAP_MIN = 600;
+// An episode must have played at least this long before a natural end triggers
+// the all-night advance/replay — a floor against a pathological feed of
+// instantly-ending items spinning the auto-advance (CPU/battery all night).
+const MIN_TRACK_MS = 2_000;
 const nativeFetch = (url: string) => fetch(url).then((r) => r.text());
 
 export default function App() {
@@ -318,11 +322,41 @@ export default function App() {
     }, 1000);
   }
 
+  // Replay the current episode from the top (all-night, when there's no other
+  // pick to advance to — e.g. a single-episode shuffle lineup). Without this the
+  // lone episode would end and the night would go silent, the exact thing
+  // all-night exists to prevent.
+  async function replayCurrent() {
+    const cur = nowRef.current;
+    if (!cur || skippingRef.current) return;
+    skippingRef.current = true;
+    try {
+      const nowMs = Date.now();
+      const heardSec = Math.round((nowMs - startedAtRef.current) / 1000);
+      if (heardSec >= HEARD_SEC) {
+        recordHeardPlay({ id: cur.id, title: cur.title, feedId: cur.feedId, startedAt: startedAtRef.current, heardSec });
+      }
+      startedAtRef.current = nowMs;
+      getNightAudio()?.setNowPlaying(cur.title, "sleepcast", "", 0);
+      await getNightAudio()?.play(cur.url, 0);
+      getNightAudio()?.setVolume(trimRef.current);
+    } finally {
+      skippingRef.current = false;
+    }
+  }
+
   // Natural end-of-track (native onTrackEnded). Auto-advance only in all-night
   // mode; a timed night lets the fade timer own the ending (unchanged behavior).
   function onTrackEndedNatural() {
-    if (!nowRef.current || endAtRef.current !== null) return;
-    skipToNext();
+    const cur = nowRef.current;
+    if (!cur || endAtRef.current !== null) return;
+    // Floor against a feed of instantly-ending items spinning the advance.
+    if (Date.now() - startedAtRef.current < MIN_TRACK_MS) return;
+    const next = nextPlayable(lineupRef.current, new Set<string>(), cur.id, getPlays());
+    // A single-episode lineup (shuffle) makes nextPlayable return the current
+    // one; replay it rather than no-op into silence.
+    if (next && next.id !== cur.id) void skipTo(next);
+    else void replayCurrent();
   }
 
   // Switch the current episode mid-night without changing when the night
@@ -430,7 +464,10 @@ export default function App() {
       setYtSession({ lineup: last.pool, minutes: r.minutes, trim });
       return;
     }
-    await beginPlayback(r.lead, r.minutes);
+    // All-night can't ride in loadTimerMinutes (the vendor store clamps -1), so
+    // resume keeps all-night when that's the selected mode instead of silently
+    // starting a short timed night.
+    await beginPlayback(r.lead, isAllNightSelected() ? ALL_NIGHT : r.minutes);
   }
 
   return (

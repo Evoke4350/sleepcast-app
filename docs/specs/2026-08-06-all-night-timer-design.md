@@ -40,12 +40,15 @@ Add a codegen event `readonly onTrackEnded: EventEmitter<TrackEndedEvent>` (`{ e
 
 - **`beginPlayback(lead, minutes)`:** if `minutes === ALL_NIGHT` → `endAtRef.current = null`, **do not** call `scheduleFadeAndStop`, set `setVolume(trim)` once (full, no fade); else the existing timed path. `restRef`/`quarterHourRef`/`nightStartedAtRef` are set the same way (all-night still observes rest + honors the quarter-hour rule — the one thing that can end an all-night session besides stop).
 - **The tick:** restructure the `end === null` branch to *not* bail for a live all-night night. When `nowRef.current` is set and `endAtRef.current === null`: run `restRef.current?.tick({ now, hidden, fadingOrDone: false })` and the quarter-hour check (elapsed from `nightStartedAtRef`), but skip the countdown/volume math. (When there is genuinely no night — `nowRef.current === null` — still bail.)
-- **New `onTrackEnded(episodeId)` handler** (subscribed next to `onNightEnded` in the mount effect): if there's a live night AND it's all-night (`endAtRef.current === null`), call `skipToNext()` to advance (loops the lineup via `nextPlayable`). If it's a timed night, ignore (preserve today's behavior — the timer owns the ending). Guard against acting when no night is live.
+- **New `onTrackEnded(episodeId)` handler** (subscribed next to `onNightEnded` in the mount effect): if there's a live night AND it's all-night (`endAtRef.current === null`), advance. Else (timed night) ignore — the timer owns the ending. Details:
+  - **Floor:** if the current episode has played < `MIN_TRACK_MS` (2 s), ignore this end — a feed of instantly-ending items must not spin the advance all night (CPU/battery).
+  - **Advance vs replay:** compute `nextPlayable(lineup, {}, cur.id, plays)`. If it yields a *different* episode → `skipTo(it)`. If it yields the current one (a **single-episode shuffle** lineup, where there's nothing else to pick) → **replay the current episode** (`replayCurrent`: re-`play(cur.url)`, no timer) rather than no-op into silence. This is the one path that keeps all-night + shuffle from going quiet after one episode.
+  - A dead/errored URL yields no natural-end event (Android `STATE_IDLE`, not `STATE_ENDED`), so all-night simply goes silent on a broken feed — acknowledged, not handled.
 - **The `remaining`/display:** for all-night, `remaining` isn't meaningful. Pass an `allNight` flag to `PlayerScreen`/the banner so they render **"all night"** instead of a countdown.
 
 ### JS — `SetupScreen`
 
-- `TIMERS` includes `ALL_NIGHT`; the chip renders `all night` (testID `timer-all-night`), selected-state like the others, `accessibilityLabel="all night timer, plays until you stop"`. Selecting persists `-1`.
+- `TIMERS` includes `ALL_NIGHT`; the chip renders `all night` (testID `timer-all-night`), selected-state like the others, `accessibilityLabel="all night timer, plays until you stop"`. Selecting persists the `sleepcast2.allnight` flag (the vendor `saveTimerMinutes` clamps `-1` away). `isAllNightSelected()` exposes it; `onResume` reads it so resuming an all-night night stays all-night rather than becoming a short timed night off the clamped `loadTimerMinutes()`.
 - The now-playing banner: when `allNight`, show `♪ now playing` + title + `all night` (no countdown).
 
 ### JS — `PlayerScreen`

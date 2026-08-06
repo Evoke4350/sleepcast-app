@@ -22,6 +22,12 @@ export const ALL_NIGHT = -1;
 const KEY_ALL_NIGHT = "sleepcast2.allnight";
 const TIMERS = [5, 45, 60, ALL_NIGHT];
 
+/** Whether the persisted timer selection is "all night". App uses this so a
+ *  resumed night keeps all-night mode (the vendor timer store can't hold -1). */
+export function isAllNightSelected(): boolean {
+  return localStorage.getItem(KEY_ALL_NIGHT) === "1";
+}
+
 interface SetupProps {
   onStart: (strategy: "shuffle" | "spread" | "varied", minutes: number) => void;
   onResume?: () => void;
