@@ -19,12 +19,13 @@ A `varied` or `spread` night already computes an 8-episode lineup (`chooseLineup
 
 Guard: a night is live (`nowRef.current` set, `endAtRef.current !== null`) and `ep.id !== nowRef.current.id`; else no-op.
 
+0. **Guard against overlap** (`skippingRef`): `skipTo` awaits `play()` while the controls stay live, so ignore a second skip while one is in flight. And **`cancelTimer()` up front, before the await** — otherwise a late skip (final seconds) could let the *old* episode's native timer fire `onNightEnded` mid-re-arm and tear the night down.
 1. **Record the outgoing episode** (same accounting `finishNight` does per episode, so a skipped-away episode still counts and won't be re-picked): `heardSec = round((now - startedAtRef.current)/1000)`; if `heardSec >= HEARD_SEC` (120) → `recordHeardPlay({id,title,feedId,startedAt: startedAtRef.current, heardSec})`. Add the outgoing id to `playedIdsRef.current` if absent.
 2. **Switch the current episode:** `setNow(ep)`, `nowRef.current = ep`, `startedAtRef.current = now` (reset the per-episode heard clock only), `trimRef.current = loadState().settings.feedTrim[ep.feedId] ?? 1`.
 3. **Drive native:** `setNowPlaying(ep.title, "sleepcast", "", 0)`; `await play(ep.url, 0)`; `remaining = (endAtRef.current - now)/1000`; `scheduleFadeAndStop(ep.id, remaining, FADE_SECONDS, trimRef.current)`.
-4. **Update the reconcile marker** so a mid-episode kill reconciles the episode actually playing: `saveMarker({ ...same night fields, episodeId: ep.id, startedAt: startedAtRef.current, playedIds: playedIdsRef.current })`. `timerMinutes`/`lineup`/`feedTitles`/`wasVaried` unchanged (night-level).
+4. **Update the reconcile marker** so a mid-episode kill reconciles the episode actually playing: `saveMarker({ ...same night fields, episodeId: ep.id, startedAt: startedAtRef.current, timerMinutes: remaining-minutes, nightMinutes: full-night-minutes, playedIds: playedIdsRef.current })`. `timerMinutes` shrinks to the current episode's remaining window (keeps `reconcileToLastNight`'s heard cap right), while the new **`nightMinutes`** field carries the full night length so the reconciled rest-ledger night isn't recorded as short.
 
-**Untouched on skip** (night-level, the night continues): `endAtRef`, `restRef`, `quarterHourRef`, `ruleSpentRef`, the 1 s tick. So the countdown, volume-fade reflection, rest detector, and quarter-hour rule keep running seamlessly.
+**Two clocks.** `startedAtRef` is the CURRENT episode's start (reset on skip → per-episode heard). `nightStartedAtRef` is the whole night's start, set once in `beginPlayback` and **never reset** — the quarter-hour rule's `elapsedMs` reads *this*, so a restless listener who keeps skipping can't reset the clock and dodge the rule. **Untouched on skip:** `endAtRef`, `nightStartedAtRef`, `restRef` (holds its own night-start internally), `ruleSpentRef`, the 1 s tick — countdown, volume-fade reflection, rest detector, and quarter-hour rule keep running against the night, not the episode.
 
 `onNightEnded` still reads `nowRef.current` as the ended episode — after a skip that is the switched-to episode, which is correct.
 

@@ -161,9 +161,9 @@ async function startSpreadNight() {
     ],
     feedTitles: { f: "F", g: "G", h: "H" }, errors: [],
   };
-  // give feed "g" a distinct trim so a skip to it is observable
+  // distinct trim per feed so a skip's trim is observable whichever pick lands
   const st = loadState();
-  saveState({ ...st, settings: { ...st.settings, feedTrim: { ...st.settings.feedTrim, g: 0.5 } } });
+  saveState({ ...st, settings: { ...st.settings, feedTrim: { ...st.settings.feedTrim, f: 0.3, g: 0.5, h: 0.7 } } });
   let tree!: TestRenderer.ReactTestRenderer;
   await act(async () => { tree = TestRenderer.create(<App />); });
   await act(async () => {});
@@ -182,26 +182,44 @@ function lineupRows(tree: TestRenderer.ReactTestRenderer) {
   return [...seen.values()];
 }
 
-test("a spread night shows the lineup and skipping re-arms the timer for the remaining night", async () => {
-  const tree = await startSpreadNight();
-  // 3 picks listed
-  expect(lineupRows(tree).length).toBe(3);
-  // pick a row that is not the current (enabled) one
-  const target = lineupRows(tree).find((r) => r.props.disabled === false)!;
-  const targetId = (target.props.testID as string).replace("lineup-row-", "");
-  await act(async () => { target.props.onPress(); });
-  // native told to play the tapped episode's url and re-armed for it
-  expect(mockAudio.play).toHaveBeenCalledWith(`https://x/${targetId}.mp3`, 0);
-  const scheduleCalls = mockAudio.calls.filter((c: any[]) => c[0] === "schedule");
-  const last = scheduleCalls[scheduleCalls.length - 1];
-  expect(last[1]).toBe(targetId);           // episodeId
-  expect(last[2]).toBeLessThanOrEqual(300); // remaining ≤ the 5-min night
-  expect(last[2]).toBeGreaterThan(290);     // skipped almost immediately
-  expect(last[3]).toBe(60);                 // fade unchanged
-  if (targetId === "b") expect(last[4]).toBe(0.5); // feed g's trim traveled
-  // the now-playing title updated to the tapped episode
-  expect(tree.root.findByProps({ testID: "nowPlaying" }).props.children).toBe(targetId.toUpperCase());
-  act(() => { tree.unmount(); });
+test("a spread night shows the lineup and skipping re-arms the timer for the REMAINING night", async () => {
+  // Control the clock so the skip happens a real 30 s into the 5-min night —
+  // this proves the re-arm uses the remaining time (270 s), not the full 300 s.
+  let nowValue = 1_000_000;
+  const spy = jest.spyOn(Date, "now").mockImplementation(() => nowValue);
+  let tree!: TestRenderer.ReactTestRenderer;
+  try {
+    tree = await startSpreadNight(); // start at t=1_000_000 → endAt = 1_300_000
+    expect(lineupRows(tree).length).toBe(3);
+    // the first schedule (the lead) armed the FULL night
+    const firstSchedule = mockAudio.calls.find((c: any[]) => c[0] === "schedule");
+    expect(firstSchedule[2]).toBe(300);
+
+    nowValue = 1_090_000; // 90 s later (remaining 210 s = 4 min ≠ the 5-min night)
+    const target = lineupRows(tree).find((r) => r.props.disabled === false)!;
+    const targetId = (target.props.testID as string).replace("lineup-row-", "");
+    await act(async () => { target.props.onPress(); });
+
+    expect(mockAudio.play).toHaveBeenCalledWith(`https://x/${targetId}.mp3`, 0);
+    const scheduleCalls = mockAudio.calls.filter((c: any[]) => c[0] === "schedule");
+    const last = scheduleCalls[scheduleCalls.length - 1];
+    expect(last[1]).toBe(targetId);   // episodeId
+    expect(last[2]).toBe(210);        // REMAINING (300 - 90), strictly less than the full 300
+    expect(last[3]).toBe(60);         // fade unchanged
+    const trimByFeed: Record<string, number> = { a: 0.3, b: 0.5, c: 0.7 };
+    expect(last[4]).toBe(trimByFeed[targetId]); // the new feed's trim traveled (unconditional)
+    expect(tree.root.findByProps({ testID: "nowPlaying" }).props.children).toBe(targetId.toUpperCase());
+    // The reconcile marker tracks the current episode's remaining window for the
+    // heard cap, but keeps the FULL night length (night start is never reset by a
+    // skip) so a killed-after-skip night reconciles as a 5-min night, not 4.
+    const marker = loadMarker()!;
+    expect(marker.episodeId).toBe(targetId);
+    expect(marker.timerMinutes).toBe(4);  // remaining window
+    expect(marker.nightMinutes).toBe(5);  // full night preserved
+  } finally {
+    spy.mockRestore();
+    act(() => { tree?.unmount(); });
+  }
 });
 
 test("the next button advances to a different pick", async () => {

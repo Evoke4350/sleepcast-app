@@ -51,7 +51,13 @@ export default function App() {
 
   const endAtRef = useRef<number | null>(null);
   const tickRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // Two clocks: `startedAtRef` is the CURRENT episode's start (reset on a skip,
+  // drives per-episode heard accounting), while `nightStartedAtRef` is the whole
+  // night's start (never reset), which the quarter-hour rule and the reconcile
+  // marker's night length key off — a skip must not defeat either.
   const startedAtRef = useRef(0);
+  const nightStartedAtRef = useRef(0);
+  const skippingRef = useRef(false);
   const lineupRef = useRef<Episode[]>([]);
   const variedRef = useRef(false);
   const nowRef = useRef<Episode | null>(null);
@@ -213,6 +219,7 @@ export default function App() {
     setNow(lead);
     nowRef.current = lead;
     startedAtRef.current = Date.now();
+    nightStartedAtRef.current = startedAtRef.current;
     endAtRef.current = Date.now() + minutes * 60_000;
     restRef.current = new RestSession(startedAtRef.current, minutes);
     quarterHourRef.current = loadState().settings.quarterHourRule && !isQuiet(loadQuietUntil(), Date.now());
@@ -232,7 +239,7 @@ export default function App() {
     // the next launch (see the mount effect). Cleared by finishNight once
     // the night ends cleanly through either onNightEnded or a manual stop.
     saveMarker({
-      episodeId: lead.id, startedAt: startedAtRef.current, timerMinutes: minutes,
+      episodeId: lead.id, startedAt: startedAtRef.current, timerMinutes: minutes, nightMinutes: minutes,
       lineup: lineupRef.current, playedIds: playedIdsRef.current,
       feedTitles: feedTitlesRef.current, wasVaried: variedRef.current,
     });
@@ -267,7 +274,10 @@ export default function App() {
       if (quarterHourRef.current && !ruleSpentRef.current && restRef.current) {
         const now = Date.now();
         const w = restRef.current.wakefulness(now);
-        if (shouldSuggestGettingUp({ elapsedMs: now - startedAtRef.current, ...w })) {
+        // Elapsed since the NIGHT began, not the current episode — otherwise a
+        // restless listener who keeps skipping would reset the clock and the
+        // rule (which fires after ~25 restless minutes) could never trigger.
+        if (shouldSuggestGettingUp({ elapsedMs: now - nightStartedAtRef.current, ...w })) {
           ruleSpentRef.current = true;
           setGettingUp(true);
           endSession();
@@ -286,30 +296,46 @@ export default function App() {
     const cur = nowRef.current;
     const end = endAtRef.current;
     if (!cur || end === null || ep.id === cur.id) return;
-    const nowMs = Date.now();
-    // Count the outgoing episode the same way finishNight does, so a skipped-
-    // away episode still lands in the ledger and won't be re-offered.
-    const heardSec = Math.round((nowMs - startedAtRef.current) / 1000);
-    if (heardSec >= HEARD_SEC) {
-      recordHeardPlay({ id: cur.id, title: cur.title, feedId: cur.feedId, startedAt: startedAtRef.current, heardSec });
-    }
-    if (!playedIdsRef.current.includes(cur.id)) playedIdsRef.current = [...playedIdsRef.current, cur.id];
+    // One skip at a time: skipTo awaits play(), and the row/next controls stay
+    // live during that await. Without this, two quick taps interleave and the
+    // armed episode / persisted marker can disagree with the audio playing.
+    if (skippingRef.current) return;
+    skippingRef.current = true;
+    try {
+      const nowMs = Date.now();
+      // Cancel the OLD episode's native timer up front — before the play()
+      // await — so a late skip (final seconds) can't have the old timer fire
+      // onNightEnded and tear the night down while we're mid-re-arm.
+      getNightAudio()?.cancelTimer();
+      // Count the outgoing episode the same way finishNight does, so a skipped-
+      // away episode still lands in the ledger and won't be re-offered.
+      const heardSec = Math.round((nowMs - startedAtRef.current) / 1000);
+      if (heardSec >= HEARD_SEC) {
+        recordHeardPlay({ id: cur.id, title: cur.title, feedId: cur.feedId, startedAt: startedAtRef.current, heardSec });
+      }
+      if (!playedIdsRef.current.includes(cur.id)) playedIdsRef.current = [...playedIdsRef.current, cur.id];
 
-    setNow(ep);
-    nowRef.current = ep;
-    startedAtRef.current = nowMs;
-    trimRef.current = loadState().settings.feedTrim[ep.feedId] ?? 1;
-    getNightAudio()?.setNowPlaying(ep.title, "sleepcast", "", 0);
-    await getNightAudio()?.play(ep.url, 0);
-    const remainingSec = Math.max(0, Math.round((end - nowMs) / 1000));
-    getNightAudio()?.scheduleFadeAndStop(ep.id, remainingSec, FADE_SECONDS, trimRef.current);
-    // Re-point the reconcile marker at the episode actually playing now, with
-    // its own (shortened) remaining window, so a mid-night kill reconciles it.
-    saveMarker({
-      episodeId: ep.id, startedAt: startedAtRef.current, timerMinutes: Math.round((end - nowMs) / 60_000),
-      lineup: lineupRef.current, playedIds: playedIdsRef.current,
-      feedTitles: feedTitlesRef.current, wasVaried: variedRef.current,
-    });
+      setNow(ep);
+      nowRef.current = ep;
+      startedAtRef.current = nowMs; // per-episode heard clock; night start is untouched
+      trimRef.current = loadState().settings.feedTrim[ep.feedId] ?? 1;
+      getNightAudio()?.setNowPlaying(ep.title, "sleepcast", "", 0);
+      await getNightAudio()?.play(ep.url, 0);
+      const remainingSec = Math.max(0, Math.round((end - nowMs) / 1000));
+      getNightAudio()?.scheduleFadeAndStop(ep.id, remainingSec, FADE_SECONDS, trimRef.current);
+      // Re-point the reconcile marker at the episode actually playing now, with
+      // its own (shortened) remaining window for the heard cap, while keeping
+      // the full night length so a killed-after-skip night reconciles correctly.
+      saveMarker({
+        episodeId: ep.id, startedAt: startedAtRef.current,
+        timerMinutes: Math.round((end - nowMs) / 60_000),
+        nightMinutes: Math.round((end - nightStartedAtRef.current) / 60_000),
+        lineup: lineupRef.current, playedIds: playedIdsRef.current,
+        feedTitles: feedTitlesRef.current, wasVaried: variedRef.current,
+      });
+    } finally {
+      skippingRef.current = false;
+    }
   }
 
   // The "next" control: advance to another pick in the lineup (prefers one
