@@ -99,8 +99,8 @@ export default function SetupScreen({ onStart, onResume, resumeAvailable, onOpen
           <Text style={s.sbTitle}>you've been falling asleep quickly for a while.</Text>
           <Text style={s.sbBody}>you might not need us right now — we can stop nudging and stay out of the way for a month.</Text>
           <View style={s.row}>
-            <TouchableOpacity testID="stepback-accept" style={s.btn} onPress={acceptStepBack}><Text style={s.btnT}>go quiet</Text></TouchableOpacity>
-            <TouchableOpacity testID="stepback-decline" style={s.btn} onPress={declineStepBack}><Text style={s.btnT}>not now</Text></TouchableOpacity>
+            <TouchableOpacity testID="stepback-accept" accessibilityRole="button" accessibilityLabel="go quiet" style={s.btn} onPress={acceptStepBack}><Text style={s.btnT}>go quiet</Text></TouchableOpacity>
+            <TouchableOpacity testID="stepback-decline" accessibilityRole="button" accessibilityLabel="not now" style={s.btn} onPress={declineStepBack}><Text style={s.btnT}>not now</Text></TouchableOpacity>
           </View>
         </View>
       )}
@@ -109,39 +109,79 @@ export default function SetupScreen({ onStart, onResume, resumeAvailable, onOpen
         <View key={f.id} style={s.feedRowContainer}>
           <View style={s.feedRow}>
             <Text style={s.feedTitle} numberOfLines={1}>{f.title}</Text>
-            <Switch testID={`feed-toggle-${f.id}`} value={f.enabled} onValueChange={(v) => toggleFeed(f.id, v)} />
+            <Switch
+              testID={`feed-toggle-${f.id}`}
+              accessibilityLabel={`${f.title} feed`}
+              value={f.enabled}
+              onValueChange={(v) => toggleFeed(f.id, v)}
+            />
             {!f.builtin && (
-              <TouchableOpacity testID={`feed-remove-${f.id}`} onPress={() => removeFeed(f.id)}>
+              <TouchableOpacity
+                testID={`feed-remove-${f.id}`}
+                accessibilityRole="button"
+                accessibilityLabel={`remove ${f.title}`}
+                onPress={() => removeFeed(f.id)}
+              >
                 <Text style={s.remove}>✕</Text>
               </TouchableOpacity>
             )}
           </View>
           <View style={s.trimRow}>
-            <TouchableOpacity testID={`trim-down-${f.id}`} onPress={() => stepTrim(f.id, -1)} style={s.trimBtn}><Text style={s.trimBtnT}>−</Text></TouchableOpacity>
-            <Text testID={`trim-value-${f.id}`} style={s.trimVal}>{`${(state.settings.feedTrim[f.id] ?? 1).toFixed(2)}×`}</Text>
-            <TouchableOpacity testID={`trim-up-${f.id}`} onPress={() => stepTrim(f.id, 1)} style={s.trimBtn}><Text style={s.trimBtnT}>+</Text></TouchableOpacity>
+            <TouchableOpacity
+              testID={`trim-down-${f.id}`}
+              accessibilityRole="button"
+              accessibilityLabel={`quieter — ${f.title}`}
+              onPress={() => stepTrim(f.id, -1)}
+              style={s.trimBtn}
+            ><Text style={s.trimBtnT}>−</Text></TouchableOpacity>
+            <Text
+              testID={`trim-value-${f.id}`}
+              style={s.trimVal}
+              accessibilityRole="adjustable"
+              accessibilityValue={{ text: `${(state.settings.feedTrim[f.id] ?? 1).toFixed(2)} times` }}
+              onAccessibilityAction={(e) => {
+                if (e.nativeEvent.actionName === "increment") stepTrim(f.id, 1);
+                else if (e.nativeEvent.actionName === "decrement") stepTrim(f.id, -1);
+              }}
+            >{`${(state.settings.feedTrim[f.id] ?? 1).toFixed(2)}×`}</Text>
+            <TouchableOpacity
+              testID={`trim-up-${f.id}`}
+              accessibilityRole="button"
+              accessibilityLabel={`louder — ${f.title}`}
+              onPress={() => stepTrim(f.id, 1)}
+              style={s.trimBtn}
+            ><Text style={s.trimBtnT}>+</Text></TouchableOpacity>
           </View>
         </View>
       ))}
       <View style={s.addRow}>
         <TextInput
           testID="add-feed-input" style={s.input} placeholder="https://feed…"
+          accessibilityLabel="feed URL"
           placeholderTextColor="#4a4436" autoCapitalize="none" value={url} onChangeText={setUrl}
         />
-        <TouchableOpacity testID="add-feed" style={s.btn} onPress={addFeed}><Text style={s.btnT}>add</Text></TouchableOpacity>
+        <TouchableOpacity testID="add-feed" accessibilityRole="button" accessibilityLabel="add feed" style={s.btn} onPress={addFeed}><Text style={s.btnT}>add</Text></TouchableOpacity>
       </View>
       {feedError && (
-        <Text testID="feed-error" style={s.feedError}>{feedError}</Text>
+        <Text testID="feed-error" style={s.feedError} accessibilityRole="alert" accessibilityLiveRegion="polite">{feedError}</Text>
       )}
       <View style={s.addRow}>
-        <TouchableOpacity testID="opml-import" style={s.btn} onPress={() => importOpml("")}><Text style={s.btnT}>import OPML</Text></TouchableOpacity>
-        <TouchableOpacity testID="opml-export" style={s.btn} onPress={exportOpml}><Text style={s.btnT}>export OPML</Text></TouchableOpacity>
+        <TouchableOpacity testID="opml-import" accessibilityRole="button" accessibilityLabel="import OPML file" style={s.btn} onPress={() => importOpml("")}><Text style={s.btnT}>import OPML</Text></TouchableOpacity>
+        <TouchableOpacity testID="opml-export" accessibilityRole="button" accessibilityLabel="export OPML file" style={s.btn} onPress={exportOpml}><Text style={s.btnT}>export OPML</Text></TouchableOpacity>
       </View>
 
       <Text style={s.h}>timer</Text>
       <View style={s.row}>
         {TIMERS.map((m) => (
-          <TouchableOpacity key={m} testID={`timer-${m}`} style={[s.chip, minutes === m && s.chipOn]} onPress={() => pickTimer(m)}>
+          <TouchableOpacity
+            key={m}
+            testID={`timer-${m}`}
+            accessibilityRole="button"
+            accessibilityLabel={`${m} minute timer`}
+            accessibilityState={{ selected: minutes === m }}
+            style={[s.chip, minutes === m && s.chipOn]}
+            onPress={() => pickTimer(m)}
+          >
             <Text style={s.btnT}>{m}m</Text>
           </TouchableOpacity>
         ))}
@@ -152,6 +192,7 @@ export default function SetupScreen({ onStart, onResume, resumeAvailable, onOpen
         <Text style={s.qhLabel}>stop & suggest getting up after 25 restless minutes</Text>
         <Switch
           testID="quarterhour-toggle"
+          accessibilityLabel="get-up nudge: stop and suggest getting up after 25 restless minutes"
           value={state.settings.quarterHourRule}
           onValueChange={(v) => persist({ ...state, settings: { ...state.settings, quarterHourRule: v } })}
         />
@@ -159,21 +200,21 @@ export default function SetupScreen({ onStart, onResume, resumeAvailable, onOpen
 
       <Text style={s.h}>start</Text>
       {mixed && (
-        <Text testID="mix-warning" style={s.mixWarning}>
+        <Text testID="mix-warning" style={s.mixWarning} accessibilityRole="alert" accessibilityLiveRegion="polite">
           a YouTube night can't mix with podcast feeds — turn one kind off
         </Text>
       )}
       <View style={s.row}>
-        <TouchableOpacity testID="start-shuffle" disabled={mixed} style={s.btn} onPress={() => startIfNotMixed("shuffle", minutes)}><Text style={s.btnT}>shuffle</Text></TouchableOpacity>
-        <TouchableOpacity testID="start-spread" disabled={mixed} style={s.btn} onPress={() => startIfNotMixed("spread", minutes)}><Text style={s.btnT}>spread</Text></TouchableOpacity>
-        <TouchableOpacity testID="start-varied" disabled={mixed} style={s.btn} onPress={() => startIfNotMixed("varied", minutes)}><Text style={s.btnT}>varied</Text></TouchableOpacity>
+        <TouchableOpacity testID="start-shuffle" accessibilityRole="button" accessibilityLabel="start — shuffle" disabled={mixed} style={s.btn} onPress={() => startIfNotMixed("shuffle", minutes)}><Text style={s.btnT}>shuffle</Text></TouchableOpacity>
+        <TouchableOpacity testID="start-spread" accessibilityRole="button" accessibilityLabel="start — spread" disabled={mixed} style={s.btn} onPress={() => startIfNotMixed("spread", minutes)}><Text style={s.btnT}>spread</Text></TouchableOpacity>
+        <TouchableOpacity testID="start-varied" accessibilityRole="button" accessibilityLabel="start — varied" disabled={mixed} style={s.btn} onPress={() => startIfNotMixed("varied", minutes)}><Text style={s.btnT}>varied</Text></TouchableOpacity>
       </View>
       {resumeAvailable && (
-        <TouchableOpacity testID="start-resume" style={s.btn} onPress={onResume}><Text style={s.btnT}>resume last night</Text></TouchableOpacity>
+        <TouchableOpacity testID="start-resume" accessibilityRole="button" accessibilityLabel="resume last night" style={s.btn} onPress={onResume}><Text style={s.btnT}>resume last night</Text></TouchableOpacity>
       )}
 
       {onOpenRest && (
-        <TouchableOpacity testID="open-rest" onPress={onOpenRest} style={s.nightsLink}>
+        <TouchableOpacity testID="open-rest" accessibilityRole="link" accessibilityLabel="sleep history" onPress={onOpenRest} style={s.nightsLink}>
           <Text style={s.nightsText}>nights ›</Text>
         </TouchableOpacity>
       )}
@@ -184,13 +225,13 @@ export default function SetupScreen({ onStart, onResume, resumeAvailable, onOpen
 const s = StyleSheet.create({
   root: { flex: 1, backgroundColor: "#050508" },
   body: { padding: 24, gap: 12 },
-  h: { color: "#6e5d44", fontSize: 12, textTransform: "uppercase", marginTop: 12 },
+  h: { color: "#9a875f", fontSize: 12, textTransform: "uppercase", marginTop: 12 },
   feedRowContainer: { flexDirection: "column", gap: 6 },
   feedRow: { flexDirection: "row", alignItems: "center", gap: 10 },
   feedTitle: { color: "#c8c0b0", flex: 1, fontSize: 14 },
   remove: { color: "#b3746b", fontSize: 16, paddingHorizontal: 6 },
   trimRow: { flexDirection: "row", alignItems: "center", gap: 10 },
-  trimBtn: { borderWidth: 1, borderColor: "#3a3325", borderRadius: 999, width: 30, height: 30, alignItems: "center", justifyContent: "center" },
+  trimBtn: { borderWidth: 1, borderColor: "#3a3325", borderRadius: 999, minWidth: 30, minHeight: 30, alignItems: "center", justifyContent: "center" },
   trimBtnT: { color: "#d9c9a8", fontSize: 16 },
   trimVal: { color: "#8a7a5c", fontSize: 12, minWidth: 44, textAlign: "center" },
   addRow: { flexDirection: "row", gap: 8, alignItems: "center" },
@@ -205,7 +246,7 @@ const s = StyleSheet.create({
   btn: { borderWidth: 1, borderColor: "#3a3325", borderRadius: 999, paddingHorizontal: 18, paddingVertical: 10 },
   btnT: { color: "#d9c9a8", fontSize: 14 },
   nightsLink: { marginTop: 12 },
-  nightsText: { color: "#6e5d44", fontSize: 13 },
+  nightsText: { color: "#9a875f", fontSize: 13 },
   stepback: { alignSelf: "stretch", borderWidth: 1, borderColor: "#3a3325", borderRadius: 12, backgroundColor: "#171310", padding: 16, gap: 8 },
   sbTitle: { color: "#d9c9a8", fontSize: 14 },
   sbBody: { color: "#8a7a5c", fontSize: 12 },

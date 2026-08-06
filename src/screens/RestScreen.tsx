@@ -32,18 +32,18 @@ export default function RestScreen({ onClose }: { onClose: () => void }) {
 
   return (
     <ScrollView style={s.root} contentContainerStyle={s.body}>
-      <View style={s.stat}>
+      <View style={s.stat} accessible={true} accessibilityLabel={`${r.nightsSlept} nights you drifted off`}>
         <Text style={s.big} testID="rest-nights">{r.nightsSlept}</Text>
         <Text style={s.cap}>nights you drifted off</Text>
       </View>
       {r.bestTimeToSleepMs !== null && (
-        <View style={s.stat}>
+        <View style={s.stat} accessible={true} accessibilityLabel={`fastest you left us, ${fmtDuration(r.bestTimeToSleepMs)}`}>
           <Text style={s.mid} testID="rest-best">{fmtDuration(r.bestTimeToSleepMs)}</Text>
           <Text style={s.cap}>fastest you left us</Text>
         </View>
       )}
       {r.medianTimeToSleepMs !== null && (
-        <View style={s.stat}>
+        <View style={s.stat} accessible={true} accessibilityLabel={`you usually take ${fmtDuration(r.medianTimeToSleepMs)}`}>
           <Text style={s.mid} testID="rest-median">{fmtDuration(r.medianTimeToSleepMs)}</Text>
           <Text style={s.cap}>how long you usually take</Text>
         </View>
@@ -52,7 +52,12 @@ export default function RestScreen({ onClose }: { onClose: () => void }) {
         <View style={s.section}>
           <Text style={s.cap}>last night</Text>
           {lastPlays.map((p) => (
-            <View key={p.id} style={s.playRow}>
+            <View
+              key={p.id}
+              style={s.playRow}
+              accessible={true}
+              accessibilityLabel={`${p.title || "an episode"}, ${Math.max(1, Math.round(p.heardSec / 60))} minutes${driftedDuring?.id === p.id ? ", you drifted off here" : ""}`}
+            >
               <Text style={s.playTitle} numberOfLines={1}>{p.title || "an episode"}</Text>
               <Text style={s.playMin}>{Math.max(1, Math.round(p.heardSec / 60))} min</Text>
               {driftedDuring?.id === p.id && <Text style={s.drift}>you drifted off here</Text>}
@@ -64,13 +69,13 @@ export default function RestScreen({ onClose }: { onClose: () => void }) {
         <View style={s.section}>
           <Text style={s.prompt}>did you fall asleep to it last time?</Text>
           <View style={s.row}>
-            <TouchableOpacity testID="rest-label-yes" style={s.btn} onPress={() => label("slept")}><Text style={s.btnT}>yes</Text></TouchableOpacity>
-            <TouchableOpacity testID="rest-label-no" style={s.btn} onPress={() => label("awake")}><Text style={s.btnT}>no</Text></TouchableOpacity>
+            <TouchableOpacity testID="rest-label-yes" style={s.btn} onPress={() => label("slept")} accessibilityRole="button" accessibilityLabel="yes, I fell asleep to it"><Text style={s.btnT}>yes</Text></TouchableOpacity>
+            <TouchableOpacity testID="rest-label-no" style={s.btn} onPress={() => label("awake")} accessibilityRole="button" accessibilityLabel="no, I stayed awake"><Text style={s.btnT}>no</Text></TouchableOpacity>
           </View>
         </View>
       )}
       <Text style={s.note}>counted only on this device. nothing sent anywhere.</Text>
-      <TouchableOpacity testID="rest-back" onPress={onClose}><Text style={s.back}>back</Text></TouchableOpacity>
+      <TouchableOpacity testID="rest-back" onPress={onClose} accessibilityRole="button" accessibilityLabel="back"><Text style={s.back}>back</Text></TouchableOpacity>
     </ScrollView>
   );
 }
@@ -86,11 +91,11 @@ const s = StyleSheet.create({
   playRow: { alignSelf: "stretch", gap: 2 },
   playTitle: { color: "#b0a898", fontSize: 14 },
   playMin: { color: "#6b6255", fontSize: 11 },
-  drift: { color: "#6e5d44", fontSize: 11 },
+  drift: { color: "#9a875f", fontSize: 11 },
   prompt: { color: "#8a7a5c", fontSize: 14 },
   row: { flexDirection: "row", gap: 12 },
   btn: { borderWidth: 1, borderColor: "#3a3325", borderRadius: 999, paddingHorizontal: 18, paddingVertical: 8 },
   btnT: { color: "#d9c9a8", fontSize: 14 },
-  note: { color: "#4a4540", fontSize: 11, textAlign: "center" },
+  note: { color: "#6f6a62", fontSize: 11, textAlign: "center" },
   back: { color: "#8a7a5c", fontSize: 12, textDecorationLine: "underline" },
 });
