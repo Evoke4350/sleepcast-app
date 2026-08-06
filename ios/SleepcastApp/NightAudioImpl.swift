@@ -29,10 +29,17 @@ public class NightAudioImpl: NSObject {
   private var fadeTrim: Double = 1
   private var startedAt: DispatchTime = .now()
   private var timerEpisodeId = ""
+  // Best-known id of the loaded episode, echoed back in onTrackEnded. JS ignores
+  // it (it advances from its own nowRef); kept only for symmetry/debugging.
+  private var currentEpisodeId = ""
 
   /// Set by NightAudio.mm; fired once when the timer reaches zero, after
   /// playback has been stopped. Arguments: (episodeId, heardSeconds).
   @objc public var onNightEnded: ((String, Int) -> Void)?
+
+  /// Set by NightAudio.mm; fired when the current item plays to its end on its
+  /// own (not a timer stop). Drives the all-night auto-advance.
+  @objc public var onTrackEnded: ((String) -> Void)?
 
   @objc public static let shared = NightAudioImpl()
 
@@ -87,6 +94,17 @@ public class NightAudioImpl: NSObject {
     created.automaticallyWaitsToMinimizeStalling = true
     player = created
 
+    // Natural end-of-track → onTrackEnded (all-night auto-advance). Drop any
+    // prior observer first so a reused impl doesn't fire for a stale item. A
+    // timer fade calls stop() (pause, not play-to-end), so this won't fire then.
+    if let prev = endObserver { NotificationCenter.default.removeObserver(prev) }
+    endObserver = NotificationCenter.default.addObserver(
+      forName: .AVPlayerItemDidPlayToEndTime, object: item, queue: .main
+    ) { [weak self] _ in
+      guard let self = self else { return }
+      self.onTrackEnded?(self.currentEpisodeId)
+    }
+
     if startAt > 0 {
       created.seek(to: CMTime(seconds: startAt, preferredTimescale: 600))
     }
@@ -112,6 +130,7 @@ public class NightAudioImpl: NSObject {
                                         fadeSeconds: Double, trim: Double) {
     cancelTimer()
     timerEpisodeId = episodeId
+    currentEpisodeId = episodeId
     fadeSecs = fadeSeconds
     fadeTrim = trim
     startedAt = .now()
@@ -148,6 +167,7 @@ public class NightAudioImpl: NSObject {
 
   @objc public func stop() {
     cancelTimer()
+    if let prev = endObserver { NotificationCenter.default.removeObserver(prev); endObserver = nil }
     player?.pause()
     player = nil
     MPNowPlayingInfoCenter.default().nowPlayingInfo = nil

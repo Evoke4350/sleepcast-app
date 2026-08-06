@@ -92,6 +92,18 @@ class NightAudioModule(reactContext: ReactApplicationContext) :
   private var fadeTrim = 1.0
   private var startedAtElapsed = 0L
   private var timerEpisodeId = ""
+  // Best-known id of the episode currently loaded, echoed back in onTrackEnded.
+  // JS ignores it (it advances from its own nowRef) — it's only for debugging.
+  private var currentEpisodeId = ""
+
+  // Fires onTrackEnded when a track finishes on its own (STATE_ENDED), which is
+  // how the all-night mode knows to auto-advance. A timer stop calls player.stop()
+  // → STATE_IDLE (not ENDED), so this never fires for a faded night.
+  private val playerListener = object : Player.Listener {
+    override fun onPlaybackStateChanged(playbackState: Int) {
+      if (playbackState == Player.STATE_ENDED) emitTrackEnded(currentEpisodeId)
+    }
+  }
 
   /** Run [block] against a connected MediaController, connecting on first use.
    *
@@ -115,6 +127,7 @@ class NightAudioModule(reactContext: ReactApplicationContext) :
       try {
         val c = future.get()
         controller = c
+        c.addListener(playerListener)
         block(c)
       } catch (e: Throwable) {
         Log.w("NightAudioMod", "controller connect failed", e)
@@ -163,6 +176,7 @@ class NightAudioModule(reactContext: ReactApplicationContext) :
   override fun scheduleFadeAndStop(episodeId: String, durationSeconds: Double, fadeSecs: Double, trim: Double) = runOnMain {
     cancelTimerInternal()
     timerEpisodeId = episodeId
+    currentEpisodeId = episodeId
     fadeSeconds = fadeSecs
     fadeTrim = trim
     startedAtElapsed = SystemClock.elapsedRealtime()
@@ -209,6 +223,13 @@ class NightAudioModule(reactContext: ReactApplicationContext) :
     // Codegen (from the spec's EventEmitter<NightEndedEvent>) generates
     // emitOnNightEnded(ReadableMap) on NativeNightAudioSpec.
     emitOnNightEnded(map)
+  }
+
+  private fun emitTrackEnded(episodeId: String) {
+    val map = Arguments.createMap().apply { putString("episodeId", episodeId) }
+    // Codegen generates emitOnTrackEnded(ReadableMap) from the spec's
+    // EventEmitter<TrackEndedEvent>.
+    emitOnTrackEnded(map)
   }
 
   override fun stop() = runOnMain {

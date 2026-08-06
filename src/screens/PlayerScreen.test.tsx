@@ -108,6 +108,14 @@ test("no lineup prop is backward compatible (no list, no crash)", () => {
   expect(tree.root.findAllByProps({ testID: "skip-next" })).toHaveLength(0);
 });
 
+test("allNight shows 'all night' instead of a countdown", () => {
+  let tree!: TestRenderer.ReactTestRenderer;
+  act(() => { tree = TestRenderer.create(<PlayerScreen title="A" remaining={90} volume={1} onStop={() => {}} allNight />); });
+  const countdown = tree.root.findByProps({ testID: "countdown" });
+  expect(countdown.props.children).toBe("all night");
+  expect(countdown.props.accessibilityLabel).toMatch(/all night/i);
+});
+
 test("onHome renders a home button that fires onHome; absent → none", () => {
   const onHome = jest.fn();
   let tree!: TestRenderer.ReactTestRenderer;

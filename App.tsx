@@ -19,7 +19,7 @@ import { recordHeardPlay, saveLastNight, loadTimerMinutes, loadLastNight, loadSt
 import { HEARD_SEC } from "./vendor/player/src/lib/plays";
 import type { Episode } from "./vendor/player/src/lib/engine";
 import { isYouTubeLineup, nextPlayable } from "./vendor/player/src/lib/youtube-night";
-import SetupScreen from "./src/screens/SetupScreen";
+import SetupScreen, { ALL_NIGHT } from "./src/screens/SetupScreen";
 import PlayerScreen from "./src/screens/PlayerScreen";
 import RestScreen from "./src/screens/RestScreen";
 import GettingUpScreen from "./src/screens/GettingUpScreen";
@@ -31,6 +31,10 @@ import { YOUTUBE } from "./src/features";
 installLocalStorage();
 
 const FADE_SECONDS = 60;
+// A stand-in "night length" for all-night mode: fed to RestSession and the
+// reconcile marker (which caps heard time by it) so a killed all-night night
+// reconciles the current episode without a real timer. 10 hours covers a night.
+const ALL_NIGHT_CAP_MIN = 600;
 const nativeFetch = (url: string) => fetch(url).then((r) => r.text());
 
 export default function App() {
@@ -46,6 +50,9 @@ export default function App() {
   // (setup) screen. Playback keeps running (native foreground service); this
   // only changes which screen is mounted. Reset whenever a night starts or ends.
   const [atHome, setAtHome] = useState(false);
+  // Whether the live night is all-night (no timer). Drives the "all night"
+  // display; the logic paths key off endAtRef.current === null.
+  const [allNight, setAllNight] = useState(false);
   // A YouTube-lead lineup never touches beginPlayback/PlayerScreen — the
   // native fade/stop timer is a podcast-only concept (WebView playback is
   // opaque to native). Set instead of started, this routes straight to
@@ -143,17 +150,22 @@ export default function App() {
   // onNightEnded in that case, so retry on a short interval until it lands.
   useEffect(() => {
     let sub: { remove?: () => void } | undefined;
+    let sub2: { remove?: () => void } | undefined;
     let id: ReturnType<typeof setInterval> | null = null;
     const trySubscribe = () => {
       const audio = getNightAudio();
       if (!audio) return false;
       sub = audio.onNightEnded((e) => { void onNightEnded(e.episodeId, e.heardSeconds); });
+      // All-night auto-advance: when a track finishes on its own, move to the
+      // next pick. onTrackEnded fires on every night; onTrackEndedNatural gates
+      // it to all-night (timed nights let the fade timer own the ending).
+      sub2 = audio.onTrackEnded(() => { void onTrackEndedNatural(); });
       return true;
     };
     if (!trySubscribe()) {
       id = setInterval(() => { if (trySubscribe() && id) { clearInterval(id); id = null; } }, 200);
     }
-    return () => { if (id) clearInterval(id); sub?.remove?.(); };
+    return () => { if (id) clearInterval(id); sub?.remove?.(); sub2?.remove?.(); };
   }, []);
 
   function stopTick() {
@@ -197,7 +209,7 @@ export default function App() {
     }
     nowRef.current = null;
     setPlaying(false); setNow(null); setRemaining(0); setVolume(1);
-    setAtHome(false); // a finished night leaves home clean for next time
+    setAtHome(false); setAllNight(false); // a finished night leaves home clean
   }
 
   async function endSession() {
@@ -220,32 +232,55 @@ export default function App() {
     finishNight(ep, heardSeconds, "faded");
   }
 
+  // Opt-in stimulus control: if the listener has been restless-and-fiddling for
+  // ~25 minutes, stop the night (same path a manual stop takes) and suggest
+  // getting up. Latched via ruleSpentRef so it can only ever fire once. Elapsed
+  // is measured from the NIGHT start (not the current episode) so a serial
+  // skipper can't keep resetting the clock. Runs for timed AND all-night nights.
+  function checkQuarterHour(now: number) {
+    if (quarterHourRef.current && !ruleSpentRef.current && restRef.current) {
+      const w = restRef.current.wakefulness(now);
+      if (shouldSuggestGettingUp({ elapsedMs: now - nightStartedAtRef.current, ...w })) {
+        ruleSpentRef.current = true;
+        setGettingUp(true);
+        endSession();
+      }
+    }
+  }
+
   async function beginPlayback(lead: Episode, minutes: number) {
+    const allNightMode = minutes === ALL_NIGHT;
+    setAllNight(allNightMode);
     setNow(lead);
     setAtHome(false); // a freshly started night opens the player
     nowRef.current = lead;
     startedAtRef.current = Date.now();
     nightStartedAtRef.current = startedAtRef.current;
-    endAtRef.current = Date.now() + minutes * 60_000;
-    restRef.current = new RestSession(startedAtRef.current, minutes);
+    // All-night has no scheduled end (endAtRef null); the fade/stop timer is
+    // simply never armed and the tick skips the countdown for it.
+    endAtRef.current = allNightMode ? null : Date.now() + minutes * 60_000;
+    restRef.current = new RestSession(startedAtRef.current, allNightMode ? ALL_NIGHT_CAP_MIN : minutes);
     quarterHourRef.current = loadState().settings.quarterHourRule && !isQuiet(loadQuietUntil(), Date.now());
     ruleSpentRef.current = false;
     // Metadata first: it has to be on the MediaItem when playback starts, or
     // the lock screen shows nothing and setting it later restarts the audio.
     getNightAudio()?.setNowPlaying(lead.title, "sleepcast", "", 0);
     await getNightAudio()?.play(lead.url, 0);
-    // Native now owns the fade/stop: it keeps running even if the screen
-    // locks and JS timers suspend. It reports back via onNightEnded. The
-    // feed's volume trim (Settings.feedTrim, defaulting to 1) has to travel
-    // with it so native can fold it into the volume it drives all night, not
-    // just during the fade window.
+    // The feed's volume trim (Settings.feedTrim, defaulting to 1) travels with
+    // playback. For a timed night native owns the fade/stop; for all-night there
+    // is no timer, so just set the trimmed level once.
     trimRef.current = loadState().settings.feedTrim[lead.feedId] ?? 1;
-    getNightAudio()?.scheduleFadeAndStop(lead.id, minutes * 60, FADE_SECONDS, trimRef.current);
+    if (allNightMode) {
+      getNightAudio()?.setVolume(trimRef.current);
+    } else {
+      getNightAudio()?.scheduleFadeAndStop(lead.id, minutes * 60, FADE_SECONDS, trimRef.current);
+    }
     // Persist a "live night" marker so a killed process can be reconciled on
-    // the next launch (see the mount effect). Cleared by finishNight once
-    // the night ends cleanly through either onNightEnded or a manual stop.
+    // the next launch. All-night uses a large cap so the reconcile heard-cap is
+    // effectively "elapsed since this episode started".
+    const markerMinutes = allNightMode ? ALL_NIGHT_CAP_MIN : minutes;
     saveMarker({
-      episodeId: lead.id, startedAt: startedAtRef.current, timerMinutes: minutes, nightMinutes: minutes,
+      episodeId: lead.id, startedAt: startedAtRef.current, timerMinutes: markerMinutes, nightMinutes: markerMinutes,
       lineup: lineupRef.current, playedIds: playedIdsRef.current,
       feedTitles: feedTitlesRef.current, wasVaried: variedRef.current,
     });
@@ -254,42 +289,35 @@ export default function App() {
 
     stopTick();
     tickRef.current = setInterval(() => {
+      if (!nowRef.current) return; // no live night to observe
+      const now = Date.now();
       const end = endAtRef.current;
-      if (end === null) return;
-      const left = (end - Date.now()) / 1000;
+      if (end === null) {
+        // All-night: still observe the rest detector and honor the quarter-hour
+        // rule, but there's no countdown/fade to reflect.
+        restRef.current?.tick({ now, hidden: appStateRef.current !== "active", fadingOrDone: false });
+        checkQuarterHour(now);
+        return;
+      }
+      const left = (end - now) / 1000;
       if (left <= 0) { stopTick(); return; } // native performs the actual stop
       // Purely observational: fed the current state, its return value is
       // ignored here. Native (via onNightEnded/finishNight) is the only thing
       // that ever ends or shortens a night — this only ever watches one.
-      restRef.current?.tick({
-        now: Date.now(),
-        hidden: appStateRef.current !== "active",
-        fadingOrDone: left <= FADE_SECONDS,
-      });
-      // The same fade curve (and per-feed trim) the web player uses, from the
-      // shared repo, purely to reflect native's countdown/volume in the UI
-      // while foregrounded. Native drives the real volume and the real stop
-      // now.
+      restRef.current?.tick({ now, hidden: appStateRef.current !== "active", fadingOrDone: left <= FADE_SECONDS });
+      // The same fade curve (and per-feed trim) the web player uses, purely to
+      // reflect native's countdown/volume in the UI while foregrounded.
       setVolume(effectiveVolume(left, FADE_SECONDS, trimRef.current));
       setRemaining(left);
-      // Opt-in stimulus control: if the listener has been restless-and-
-      // fiddling for ~25 minutes, stop the night (same path a manual stop
-      // takes) and suggest getting up. Latched via ruleSpentRef so it can
-      // only ever fire once per night, even though the interval keeps
-      // ticking after endSession() has torn playback down.
-      if (quarterHourRef.current && !ruleSpentRef.current && restRef.current) {
-        const now = Date.now();
-        const w = restRef.current.wakefulness(now);
-        // Elapsed since the NIGHT began, not the current episode — otherwise a
-        // restless listener who keeps skipping would reset the clock and the
-        // rule (which fires after ~25 restless minutes) could never trigger.
-        if (shouldSuggestGettingUp({ elapsedMs: now - nightStartedAtRef.current, ...w })) {
-          ruleSpentRef.current = true;
-          setGettingUp(true);
-          endSession();
-        }
-      }
+      checkQuarterHour(now);
     }, 1000);
+  }
+
+  // Natural end-of-track (native onTrackEnded). Auto-advance only in all-night
+  // mode; a timed night lets the fade timer own the ending (unchanged behavior).
+  function onTrackEndedNatural() {
+    if (!nowRef.current || endAtRef.current !== null) return;
+    skipToNext();
   }
 
   // Switch the current episode mid-night without changing when the night
@@ -300,8 +328,7 @@ export default function App() {
   // per-episode clock (startedAtRef), the current episode, and the trim change.
   async function skipTo(ep: Episode) {
     const cur = nowRef.current;
-    const end = endAtRef.current;
-    if (!cur || end === null || ep.id === cur.id) return;
+    if (!cur || ep.id === cur.id) return;
     // One skip at a time: skipTo awaits play(), and the row/next controls stay
     // live during that await. Without this, two quick taps interleave and the
     // armed episode / persisted marker can disagree with the audio playing.
@@ -311,7 +338,8 @@ export default function App() {
       const nowMs = Date.now();
       // Cancel the OLD episode's native timer up front — before the play()
       // await — so a late skip (final seconds) can't have the old timer fire
-      // onNightEnded and tear the night down while we're mid-re-arm.
+      // onNightEnded and tear the night down while we're mid-re-arm. Harmless
+      // in all-night mode (no timer running).
       getNightAudio()?.cancelTimer();
       // Count the outgoing episode the same way finishNight does, so a skipped-
       // away episode still lands in the ledger and won't be re-offered.
@@ -327,15 +355,23 @@ export default function App() {
       trimRef.current = loadState().settings.feedTrim[ep.feedId] ?? 1;
       getNightAudio()?.setNowPlaying(ep.title, "sleepcast", "", 0);
       await getNightAudio()?.play(ep.url, 0);
-      const remainingSec = Math.max(0, Math.round((end - nowMs) / 1000));
-      getNightAudio()?.scheduleFadeAndStop(ep.id, remainingSec, FADE_SECONDS, trimRef.current);
-      // Re-point the reconcile marker at the episode actually playing now, with
-      // its own (shortened) remaining window for the heard cap, while keeping
-      // the full night length so a killed-after-skip night reconciles correctly.
+      // Re-arm a fade/stop only for a TIMED night, for the REMAINING time; an
+      // all-night night has no timer, so just set the trimmed level.
+      const end = endAtRef.current;
+      if (end !== null) {
+        const remainingSec = Math.max(0, Math.round((end - nowMs) / 1000));
+        getNightAudio()?.scheduleFadeAndStop(ep.id, remainingSec, FADE_SECONDS, trimRef.current);
+      } else {
+        getNightAudio()?.setVolume(trimRef.current);
+      }
+      // Re-point the reconcile marker at the episode actually playing now: its
+      // own (shortened) remaining window for the heard cap, plus the full night
+      // length (a large cap for all-night) so a killed night reconciles right.
+      const markerMinutes = end !== null ? Math.round((end - nowMs) / 60_000) : ALL_NIGHT_CAP_MIN;
+      const nightMins = end !== null ? Math.round((end - nightStartedAtRef.current) / 60_000) : ALL_NIGHT_CAP_MIN;
       saveMarker({
         episodeId: ep.id, startedAt: startedAtRef.current,
-        timerMinutes: Math.round((end - nowMs) / 60_000),
-        nightMinutes: Math.round((end - nightStartedAtRef.current) / 60_000),
+        timerMinutes: markerMinutes, nightMinutes: nightMins,
         lineup: lineupRef.current, playedIds: playedIdsRef.current,
         feedTitles: feedTitlesRef.current, wasVaried: variedRef.current,
       });
@@ -414,7 +450,7 @@ export default function App() {
           />
         ) : playing && now && !atHome ? (
           <PlayerScreen
-            title={now.title} remaining={remaining} volume={volume}
+            title={now.title} remaining={remaining} volume={volume} allNight={allNight}
             lineup={lineupRef.current} currentId={now.id} feedTitles={feedTitlesRef.current}
             onSelect={(ep) => skipTo(ep)} onNext={skipToNext} onHome={() => setAtHome(true)}
             onStop={() => endSession()} onInteract={() => restRef.current?.noteInteraction()} />
@@ -425,7 +461,7 @@ export default function App() {
             onStart={onStart} onResume={onResume}
             resumeAvailable={!!resumeNight(loadTimerMinutes()) && !isQuiet(loadQuietUntil(), Date.now())}
             onOpenRest={() => setShowRest(true)}
-            nowPlaying={playing && now ? { title: now.title, remaining } : undefined}
+            nowPlaying={playing && now ? { title: now.title, remaining, allNight } : undefined}
             onReturnToPlayer={() => setAtHome(false)} />
         )}
       </SafeAreaView>

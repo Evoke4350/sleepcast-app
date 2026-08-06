@@ -39,6 +39,9 @@ RCT_EXPORT_MODULE()
         @"heardSeconds" : @(heardSeconds),
       }];
     };
+    [NightAudioImpl shared].onTrackEnded = ^(NSString *episodeId) {
+      [weakSelf emitOnTrackEnded:@{ @"episodeId" : episodeId }];
+    };
   }
   return self;
 }

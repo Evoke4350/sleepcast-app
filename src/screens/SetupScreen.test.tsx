@@ -38,6 +38,40 @@ test("no now-playing prop renders no banner", () => {
   expect(tree.root.findAllByProps({ testID: "now-playing-banner" })).toHaveLength(0);
 });
 
+test("the all-night chip renders, selects, and persists the all-night flag", () => {
+  localStorage.removeItem("sleepcast2.allnight");
+  const onStart = jest.fn();
+  let tree!: TestRenderer.ReactTestRenderer;
+  act(() => { tree = TestRenderer.create(<SetupScreen onStart={onStart} />); });
+  const chip = find(tree, "timer-all-night");
+  expect(chip.props.accessibilityLabel).toMatch(/all night/i);
+  act(() => { chip.props.onPress(); });
+  // starting uses the sentinel, and the flag persists (vendor saveTimerMinutes can't hold -1)
+  act(() => { find(tree, "start-shuffle").props.onPress(); });
+  expect(onStart).toHaveBeenCalledWith("shuffle", -1);
+  expect(localStorage.getItem("sleepcast2.allnight")).toBe("1");
+});
+
+test("a fresh mount restores all-night from the flag", () => {
+  localStorage.setItem("sleepcast2.allnight", "1");
+  let tree!: TestRenderer.ReactTestRenderer;
+  act(() => { tree = TestRenderer.create(<SetupScreen onStart={() => {}} />); });
+  expect(find(tree, "timer-all-night").props.accessibilityState.selected).toBe(true);
+  localStorage.removeItem("sleepcast2.allnight");
+});
+
+test("the banner shows 'all night' when allNight is set", () => {
+  let tree!: TestRenderer.ReactTestRenderer;
+  act(() => {
+    tree = TestRenderer.create(
+      <SetupScreen onStart={() => {}} nowPlaying={{ title: "A", remaining: 100, allNight: true }} onReturnToPlayer={() => {}} />
+    );
+  });
+  const banner = find(tree, "now-playing-banner");
+  const texts = banner.findAllByType(require("react-native").Text).flatMap((t: any) => [t.props.children].flat());
+  expect(texts.join(" ")).toMatch(/all night/);
+});
+
 test("adding a feed by URL persists it", () => {
   let tree!: TestRenderer.ReactTestRenderer;
   act(() => { tree = TestRenderer.create(<SetupScreen onStart={() => {}} />); });
