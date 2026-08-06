@@ -13,6 +13,31 @@ function find(tree: TestRenderer.ReactTestRenderer, testID: string) {
   return tree.root.findByProps({ testID });
 }
 
+test("a now-playing banner shows the title + countdown and taps back to the player", () => {
+  const onReturnToPlayer = jest.fn();
+  let tree!: TestRenderer.ReactTestRenderer;
+  act(() => {
+    tree = TestRenderer.create(
+      <SetupScreen onStart={() => {}} nowPlaying={{ title: "A Quiet Night", remaining: 185 }} onReturnToPlayer={onReturnToPlayer} />
+    );
+  });
+  const banner = find(tree, "now-playing-banner");
+  expect(banner.props.accessibilityRole).toBe("button");
+  expect(banner.props.accessibilityLabel).toMatch(/A Quiet Night/);
+  // title + formatted countdown are visible somewhere in the banner subtree
+  const texts = banner.findAllByType(require("react-native").Text).map((t: any) => t.props.children);
+  expect(texts.join(" ")).toMatch(/A Quiet Night/);
+  expect(texts.join(" ")).toMatch(/3:05/); // formatTime(185)
+  act(() => { banner.props.onPress(); });
+  expect(onReturnToPlayer).toHaveBeenCalled();
+});
+
+test("no now-playing prop renders no banner", () => {
+  let tree!: TestRenderer.ReactTestRenderer;
+  act(() => { tree = TestRenderer.create(<SetupScreen onStart={() => {}} />); });
+  expect(tree.root.findAllByProps({ testID: "now-playing-banner" })).toHaveLength(0);
+});
+
 test("adding a feed by URL persists it", () => {
   let tree!: TestRenderer.ReactTestRenderer;
   act(() => { tree = TestRenderer.create(<SetupScreen onStart={() => {}} />); });

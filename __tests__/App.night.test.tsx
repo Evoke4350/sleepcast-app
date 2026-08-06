@@ -222,6 +222,49 @@ test("a spread night shows the lineup and skipping re-arms the timer for the REM
   }
 });
 
+// Slice 10: going home from the player must NOT stop playback — the native
+// foreground service keeps running; only the mounted screen changes.
+test("home leaves the player for setup without stopping playback, and the banner returns", async () => {
+  mockAudio = freshAudio();
+  mockPoolResult = { pool: [{ id: "a", title: "A Quiet Night", url: "https://x/a.mp3", feedId: "f", date: "2024-01-01" }], feedTitles: { f: "F" }, errors: [] };
+  let tree!: TestRenderer.ReactTestRenderer;
+  await act(async () => { tree = TestRenderer.create(<App />); });
+  await act(async () => {});
+  await act(async () => { tree.root.findByProps({ testID: "start-shuffle" }).props.onPress(); });
+  // on the player
+  expect(tree.root.findByProps({ testID: "nowPlaying" }).props.children).toBe("A Quiet Night");
+  // go home
+  await act(async () => { tree.root.findByProps({ testID: "home" }).props.onPress(); });
+  // setup is now shown WITH a now-playing banner; audio was NOT stopped
+  const banner = tree.root.findByProps({ testID: "now-playing-banner" });
+  expect(banner.props.accessibilityLabel).toMatch(/A Quiet Night/);
+  expect(mockAudio.stop).not.toHaveBeenCalled();
+  expect(mockAudio.cancelTimer).not.toHaveBeenCalled();
+  expect(tree.root.findAllByProps({ testID: "nowPlaying" })).toHaveLength(0); // player unmounted
+  // tap the banner → back on the player
+  await act(async () => { banner.props.onPress(); });
+  expect(tree.root.findByProps({ testID: "nowPlaying" }).props.children).toBe("A Quiet Night");
+  act(() => { tree.unmount(); });
+});
+
+test("starting a new night from home replaces the current one (stop + re-schedule)", async () => {
+  mockAudio = freshAudio();
+  mockPoolResult = { pool: [{ id: "a", title: "A Quiet Night", url: "https://x/a.mp3", feedId: "f", date: "2024-01-01" }], feedTitles: { f: "F" }, errors: [] };
+  let tree!: TestRenderer.ReactTestRenderer;
+  await act(async () => { tree = TestRenderer.create(<App />); });
+  await act(async () => {});
+  await act(async () => { tree.root.findByProps({ testID: "start-shuffle" }).props.onPress(); });
+  await act(async () => { tree.root.findByProps({ testID: "home" }).props.onPress(); });
+  // start another night from home
+  await act(async () => { tree.root.findByProps({ testID: "start-shuffle" }).props.onPress(); });
+  // the old night was abandoned (stop + cancel once) and a fresh timer armed
+  expect(mockAudio.stop).toHaveBeenCalledTimes(1);
+  const scheduleCalls = mockAudio.calls.filter((c: any[]) => c[0] === "schedule");
+  expect(scheduleCalls.length).toBeGreaterThanOrEqual(2); // lead + the replacement
+  expect(tree.root.findByProps({ testID: "nowPlaying" }).props.children).toBe("A Quiet Night");
+  act(() => { tree.unmount(); });
+});
+
 test("the next button advances to a different pick", async () => {
   const tree = await startSpreadNight();
   const before = tree.root.findByProps({ testID: "nowPlaying" }).props.children;

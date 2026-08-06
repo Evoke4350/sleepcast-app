@@ -107,3 +107,18 @@ test("no lineup prop is backward compatible (no list, no crash)", () => {
   act(() => { tree = TestRenderer.create(<PlayerScreen title="A" remaining={90} volume={1} onStop={() => {}} />); });
   expect(tree.root.findAllByProps({ testID: "skip-next" })).toHaveLength(0);
 });
+
+test("onHome renders a home button that fires onHome; absent → none", () => {
+  const onHome = jest.fn();
+  let tree!: TestRenderer.ReactTestRenderer;
+  act(() => { tree = TestRenderer.create(<PlayerScreen title="A" remaining={90} volume={1} onStop={() => {}} onHome={onHome} />); });
+  const home = tree.root.findByProps({ testID: "home" });
+  expect(home.props.accessibilityRole).toBe("button");
+  expect(home.props.accessibilityLabel).toMatch(/home/i);
+  act(() => { home.props.onPress(); });
+  expect(onHome).toHaveBeenCalled();
+
+  let bare!: TestRenderer.ReactTestRenderer;
+  act(() => { bare = TestRenderer.create(<PlayerScreen title="A" remaining={90} volume={1} onStop={() => {}} />); });
+  expect(bare.root.findAllByProps({ testID: "home" })).toHaveLength(0);
+});

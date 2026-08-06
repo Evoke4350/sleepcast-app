@@ -42,6 +42,10 @@ export default function App() {
   const [playing, setPlaying] = useState(false);
   const [showRest, setShowRest] = useState(false);
   const [gettingUp, setGettingUp] = useState(false);
+  // True when a night is playing but the listener has gone back to the home
+  // (setup) screen. Playback keeps running (native foreground service); this
+  // only changes which screen is mounted. Reset whenever a night starts or ends.
+  const [atHome, setAtHome] = useState(false);
   // A YouTube-lead lineup never touches beginPlayback/PlayerScreen — the
   // native fade/stop timer is a podcast-only concept (WebView playback is
   // opaque to native). Set instead of started, this routes straight to
@@ -193,6 +197,7 @@ export default function App() {
     }
     nowRef.current = null;
     setPlaying(false); setNow(null); setRemaining(0); setVolume(1);
+    setAtHome(false); // a finished night leaves home clean for next time
   }
 
   async function endSession() {
@@ -217,6 +222,7 @@ export default function App() {
 
   async function beginPlayback(lead: Episode, minutes: number) {
     setNow(lead);
+    setAtHome(false); // a freshly started night opens the player
     nowRef.current = lead;
     startedAtRef.current = Date.now();
     nightStartedAtRef.current = startedAtRef.current;
@@ -351,6 +357,9 @@ export default function App() {
     if (!pool) return;
     const r = await chooseLineup(strategy, pool);
     if (!r) return;
+    // Starting from home while a night is live replaces it: abandon the current
+    // one through the same funnel a manual stop uses, then begin the new night.
+    if (nowRef.current) endSession();
     lineupRef.current = r.lineup;
     playedIdsRef.current = [];
     variedRef.current = r.wasVaried;
@@ -366,6 +375,7 @@ export default function App() {
     const last = loadLastNight();
     const r = resumeNight(loadTimerMinutes());
     if (!last || !r) return;
+    if (nowRef.current) endSession(); // replace any live night (see onStart)
     lineupRef.current = last.pool;
     playedIdsRef.current = [...last.playedIds];
     variedRef.current = last.wasVaried;
@@ -402,16 +412,21 @@ export default function App() {
             trim={ytSession.trim}
             onEnd={() => setYtSession(null)}
           />
-        ) : playing && now ? (
+        ) : playing && now && !atHome ? (
           <PlayerScreen
             title={now.title} remaining={remaining} volume={volume}
             lineup={lineupRef.current} currentId={now.id} feedTitles={feedTitlesRef.current}
-            onSelect={(ep) => skipTo(ep)} onNext={skipToNext}
+            onSelect={(ep) => skipTo(ep)} onNext={skipToNext} onHome={() => setAtHome(true)}
             onStop={() => endSession()} onInteract={() => restRef.current?.noteInteraction()} />
         ) : showRest ? (
           <RestScreen onClose={() => setShowRest(false)} />
         ) : (
-          <SetupScreen onStart={onStart} onResume={onResume} resumeAvailable={!!resumeNight(loadTimerMinutes()) && !isQuiet(loadQuietUntil(), Date.now())} onOpenRest={() => setShowRest(true)} />
+          <SetupScreen
+            onStart={onStart} onResume={onResume}
+            resumeAvailable={!!resumeNight(loadTimerMinutes()) && !isQuiet(loadQuietUntil(), Date.now())}
+            onOpenRest={() => setShowRest(true)}
+            nowPlaying={playing && now ? { title: now.title, remaining } : undefined}
+            onReturnToPlayer={() => setAtHome(false)} />
         )}
       </SafeAreaView>
     </SafeAreaProvider>

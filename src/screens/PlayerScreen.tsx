@@ -16,6 +16,9 @@ interface PlayerProps {
   feedTitles?: Record<string, string>;
   onSelect?: (ep: Episode) => void;
   onNext?: () => void;
+  // Leave the player for the home/setup screen WITHOUT stopping playback (the
+  // native foreground service keeps the audio + timer going).
+  onHome?: () => void;
 }
 
 function humanTime(sec: number): string {
@@ -28,7 +31,7 @@ function humanTime(sec: number): string {
 
 export default function PlayerScreen({
   title, remaining, volume, onStop, onInteract,
-  lineup, currentId, feedTitles, onSelect, onNext,
+  lineup, currentId, feedTitles, onSelect, onNext, onHome,
 }: PlayerProps) {
   const showList = !!lineup && lineup.length > 1;
   return (
@@ -42,6 +45,11 @@ export default function PlayerScreen({
       <Text style={s.dim} testID="countdown" accessibilityLabel={humanTime(remaining)}>{formatTime(remaining)}</Text>
       <Text style={s.dim} testID="volume" accessibilityLabel={`volume ${Math.round(volume * 100)} percent`}>vol {volume.toFixed(2)}</Text>
       <View style={s.controls}>
+        {onHome && (
+          <TouchableOpacity style={s.btn} testID="home" accessibilityRole="button" accessibilityLabel="back to home, keep playing" onPress={onHome}>
+            <Text style={s.btnT}>home</Text>
+          </TouchableOpacity>
+        )}
         {showList && (
           <TouchableOpacity style={s.btn} testID="skip-next" accessibilityRole="button" accessibilityLabel="next episode" onPress={onNext}>
             <Text style={s.btnT}>next</Text>
