@@ -33,14 +33,16 @@ Builds:
       - apt-get install -y npm
     init:
       - npm ci
+    # onnxruntime-react-native ships a prebuilt .aar / .so and pulls a prebuilt
+    # onnxruntime-android aar from Maven. The foss flavor never uses it (the
+    # varied mix runs a pure-JS embedder), so delete it before the scan and
+    # build. RN autolinking then excludes an absent package entirely — VERIFIED:
+    # with it removed, `assembleFossRelease` builds clean and the whole build
+    # references onnxruntime zero times (no aar fetch, no .so, no Gradle project).
+    scandelete:
+      - node_modules/onnxruntime-react-native
     gradle:
       - foss
-    # The foss flavor strips onnxruntime's prebuilt .so and swaps in the pure-JS
-    # embedder, so no non-free binary should reach the APK. If fdroid's scanner
-    # still flags the maven-pulled onnxruntime aar as a build-time dependency,
-    # exclude onnxruntime-react-native from the foss build graph entirely
-    # (react-native.config.js is global; a per-flavor gradle exclusion or a
-    # scanignore/prebuild step may be needed) — see the slice-8 spec's "Out".
     output: build/outputs/apk/foss/release/app-foss-release.apk
 
 AutoUpdateMode: Version v%v
