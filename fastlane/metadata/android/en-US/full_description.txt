@@ -1,0 +1,13 @@
+sleepcast plays sleep podcasts on a timer and fades them out gently so you drift off — without ads, trackers, accounts, or Google Play Services.
+
+Pick how long: 5, 45, or 60 minutes, or "all night". A short native fade lowers the volume before playback stops, so nothing jolts you awake. All-night mode has no timer and moves through the night's lineup on its own until you stop it.
+
+Choose a night three ways: shuffle (one episode), spread (a mix across your feeds and years), or a varied mix. See the whole lineup on the player, jump to any episode, or skip to the next. Leave the player back to your feeds and keep listening — a now-playing banner brings you back.
+
+More:
+* Per-feed volume leveling, so a loud show and a quiet one sit at the same level
+* Optional "get-up nudge": after ~25 restless minutes it can stop and suggest getting up
+* An observational rest view that only watches — it never sends anything anywhere
+* Add feeds by URL, or import/export OPML
+
+Privacy: no analytics, no crash reporting, no advertising IDs, no Play Services. This F-Droid build also ships no prebuilt machine-learning binaries — the "varied mix" runs a small pure-code text model instead — and leaves out the YouTube feature entirely.
