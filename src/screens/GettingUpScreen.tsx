@@ -3,13 +3,13 @@ import { View, Text, TouchableOpacity, StyleSheet } from "react-native";
 
 export default function GettingUpScreen({ onDismiss }: { onDismiss: () => void }) {
   return (
-    <View style={s.body} testID="gettingup">
-      <Text style={s.title}>you've been up a while</Text>
+    <View style={s.body} testID="gettingup" accessibilityLiveRegion="polite">
+      <Text style={s.title} accessibilityRole="header">you've been up a while</Text>
       <Text style={s.body2}>
         the bed works best when it's just for sleep. try getting up for a few
         minutes — a glass of water, a dim room — and come back when you're heavy.
       </Text>
-      <TouchableOpacity style={s.btn} testID="gettingup-dismiss" onPress={onDismiss}>
+      <TouchableOpacity style={s.btn} testID="gettingup-dismiss" onPress={onDismiss} accessibilityRole="button" accessibilityLabel="ok">
         <Text style={s.btnT}>ok</Text>
       </TouchableOpacity>
     </View>
