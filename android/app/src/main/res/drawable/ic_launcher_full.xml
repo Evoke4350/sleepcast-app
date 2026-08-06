@@ -1,0 +1,16 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Self-contained icon for pre-API-26 launchers (referenced by the
+         mipmap-anydpi fallbacks): night tile + crescent moon + stars. -->
+    <path android:fillColor="#0d0b14" android:pathData="M0,0 h108 v108 h-108 Z" />
+    <path
+        android:fillColor="#f0dcb8"
+        android:fillType="evenOdd"
+        android:pathData="M21,58 a27,27 0 1,0 54,0 a27,27 0 1,0 -54,0 Z M38,49 a23,23 0 1,0 46,0 a23,23 0 1,0 -46,0 Z" />
+    <path android:fillColor="#f0dcb8" android:pathData="M76,27 L77.5,32.5 L83,34 L77.5,35.5 L76,41 L74.5,35.5 L69,34 L74.5,32.5 Z" />
+    <path android:fillColor="#f0dcb8" android:pathData="M82,49 L83.1,52.9 L87,54 L83.1,55.1 L82,59 L80.9,55.1 L77,54 L80.9,52.9 Z" />
+    <path android:fillColor="#f0dcb8" android:pathData="M64,18.5 L65.2,22.8 L69.5,24 L65.2,25.2 L64,29.5 L62.8,25.2 L58.5,24 L62.8,22.8 Z" />
+</vector>

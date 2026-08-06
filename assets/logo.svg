@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 108 108" width="108" height="108">
+  <!-- sleepcast logo: warm crescent moon + stars on night-dark. Master art;
+       the Android launcher icon (adaptive + legacy) is derived from these paths. -->
+  <rect width="108" height="108" rx="24" fill="#0d0b14"/>
+  <!-- crescent: outer circle minus an offset circle (even-odd) -->
+  <path fill="#f0dcb8" fill-rule="evenodd"
+    d="M21,58 a27,27 0 1,0 54,0 a27,27 0 1,0 -54,0 Z M38,49 a23,23 0 1,0 46,0 a23,23 0 1,0 -46,0 Z"/>
+  <!-- three 4-point stars in the crescent's opening -->
+  <path fill="#f0dcb8" d="M76,27 L77.5,32.5 L83,34 L77.5,35.5 L76,41 L74.5,35.5 L69,34 L74.5,32.5 Z"/>
+  <path fill="#f0dcb8" d="M82,49 L83.1,52.9 L87,54 L83.1,55.1 L82,59 L80.9,55.1 L77,54 L80.9,52.9 Z"/>
+  <path fill="#f0dcb8" d="M64,18.5 L65.2,22.8 L69.5,24 L65.2,25.2 L64,29.5 L62.8,25.2 L58.5,24 L62.8,22.8 Z"/>
+</svg>
