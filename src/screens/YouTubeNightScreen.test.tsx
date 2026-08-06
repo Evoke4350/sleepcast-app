@@ -365,6 +365,11 @@ test("yt-nowplaying has accessibilityRole header", () => {
   const title = tree.root.findByProps({ testID: "yt-nowplaying" });
   expect(title.props.accessibilityRole).toBe("header");
 
+  // the decorative moon is hidden from the screen reader (parity with PlayerScreen)
+  const moon = tree.root.findAll((n) => n.props.children === "☾").find(Boolean);
+  expect(moon?.props.accessibilityElementsHidden).toBe(true);
+  expect(moon?.props.importantForAccessibility).toBe("no-hide-descendants");
+
   act(() => {
     tree.unmount();
   });

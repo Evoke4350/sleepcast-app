@@ -349,11 +349,11 @@ export default function YouTubeNightScreen({
       <View style={s.playerWrap}>
         <YouTubePlayer ref={playerRef} webViewProps={WEBVIEW_PROPS} />
       </View>
-      <Text style={s.moon}>☾</Text>
+      <Text style={s.moon} accessibilityElementsHidden={true} importantForAccessibility="no-hide-descendants">☾</Text>
       <Text style={s.title} testID="yt-nowplaying" numberOfLines={2} accessibilityRole="header">
         {nowPlaying?.title ?? ""}
       </Text>
-      <Text style={s.dim} testID="yt-countdown" accessibilityLabel={`${Math.round(countdown / 60)} minutes ${Math.round(countdown % 60)} seconds remaining`}>{formatTime(countdown)}</Text>
+      <Text style={s.dim} testID="yt-countdown" accessibilityLabel={`${Math.floor(countdown / 60)} minutes ${Math.round(countdown % 60)} seconds remaining`}>{formatTime(countdown)}</Text>
       <Text style={s.dim} testID="yt-volume" accessibilityLabel={`volume ${Math.round(volFrac * 100)} percent`}>vol {volFrac.toFixed(2)}</Text>
       <TouchableOpacity style={s.btn} testID="yt-stop" onPress={handleStop} accessibilityRole="button" accessibilityLabel="stop">
         <Text style={s.btnT}>stop</Text>
