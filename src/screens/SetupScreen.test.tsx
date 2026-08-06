@@ -162,3 +162,20 @@ test("no mix warning when only one kind of feed is enabled", () => {
   expect(tree.root.findAllByProps({ testID: "mix-warning" })).toHaveLength(0);
   expect(find(tree, "start-varied").props.disabled).toBeFalsy();
 });
+
+test("controls expose accessibility labels/roles", () => {
+  let tree!: TestRenderer.ReactTestRenderer;
+  act(() => { tree = TestRenderer.create(<SetupScreen onStart={() => {}} onOpenRest={() => {}} />); });
+  const toggle = find(tree, "feed-toggle-swm");
+  expect(toggle.props.accessibilityLabel).toMatch(/Sleep With Me/i);
+  const up = find(tree, "trim-up-swm");
+  expect(up.props.accessibilityRole).toBe("button");
+  expect(up.props.accessibilityLabel).toMatch(/louder/i);
+  const val = find(tree, "trim-value-swm");
+  expect(val.props.accessibilityRole).toBe("adjustable");
+  expect(val.props.accessibilityValue?.text).toMatch(/times|×|1\.00/);
+  const t5 = find(tree, "timer-5");
+  expect(t5.props.accessibilityRole).toBe("button");
+  const shuffle = find(tree, "start-shuffle");
+  expect(shuffle.props.accessibilityLabel).toMatch(/shuffle/i);
+});
