@@ -159,7 +159,12 @@ export default function App() {
       // All-night auto-advance: when a track finishes on its own, move to the
       // next pick. onTrackEnded fires on every night; onTrackEndedNatural gates
       // it to all-night (timed nights let the fade timer own the ending).
-      sub2 = audio.onTrackEnded(() => { void onTrackEndedNatural(); });
+      // Guarded: a JS bundle newer than the installed native binary (a dev
+      // reload against an old build) would otherwise crash here on an undefined
+      // event — degrade to "no auto-advance" instead.
+      if (typeof audio.onTrackEnded === "function") {
+        sub2 = audio.onTrackEnded(() => { void onTrackEndedNatural(); });
+      }
       return true;
     };
     if (!trySubscribe()) {
