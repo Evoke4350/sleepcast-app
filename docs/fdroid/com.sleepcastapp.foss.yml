@@ -1,14 +1,17 @@
 # Reference F-Droid build recipe for the `foss` flavor.
 #
-# This is NOT consumed by our repo — it belongs in the fdroiddata repo as
-# metadata/com.sleepcastapp.foss.yml. Kept here as a starting point for whoever
-# submits the app. Refine against `fdroid lint` / `fdroid build` before opening
-# a merge request against fdroiddata.
+# NOT consumed by our repo — it belongs in fdroiddata as
+# metadata/com.sleepcastapp.foss.yml. Kept here as a starting point. Finalize it
+# by running `fdroid lint` + `fdroid build -l com.sleepcastapp.foss` locally
+# (fdroidserver + Docker) before opening the merge request; the scanignore list
+# and signing/output specifics almost always need a build-loop to nail down.
 #
-# React Native apps need node + the JS bundle produced during the Gradle build.
-# The `foss` variant's bundle task already runs Metro with SLEEPCAST_FOSS=1 (via
-# the env-wrapped nodeExecutableAndArgs in android/app/build.gradle), and the
-# build fails closed if the MiniLM model ever leaks into the bundle.
+# Submission (current, 2026): fork gitlab.com/fdroid/fdroiddata, add this file on
+# a branch named `com.sleepcastapp.foss`, make the CI pipeline on your fork pass,
+# then open a merge request (commit subject `New App: com.sleepcastapp.foss`,
+# fill the MR template). RFP is only for "please package this" requests.
+# Refs: f-droid.org/docs/Inclusion_How-To, Build_Metadata_Reference, and the
+# live React Native recipe metadata/com.mattermost.rnbeta.yml.
 
 Categories:
   - Multimedia
@@ -17,7 +20,6 @@ License: MIT
 AuthorName: sleepcast contributors
 SourceCode: https://github.com/Evoke4350/sleepcast-app
 IssueTracker: https://github.com/Evoke4350/sleepcast-app/issues
-AutoName: sleepcast
 
 RepoType: git
 Repo: https://github.com/Evoke4350/sleepcast-app.git
@@ -25,26 +27,48 @@ Repo: https://github.com/Evoke4350/sleepcast-app.git
 Builds:
   - versionName: 1.0-foss
     versionCode: 1
-    commit: v1.0-foss            # tag the release commit before submitting
+    commit: v1.0-foss
     subdir: android/app
-    submodules: true             # vendor/player is a git submodule
+    submodules: true            # vendor/player is a git submodule
+    # The buildserver's apt Node is far too old for RN 0.86 (Metro needs
+    # >=22.13). Provision a pinned Node tarball + checksum instead of apt.
     sudo:
-      - apt-get update
-      - apt-get install -y npm
+      - curl -Lo node.tar.gz https://nodejs.org/dist/v22.23.2/node-v22.23.2-linux-x64.tar.gz
+      - echo "b294a556e639d64338823920e5866c21c02741742d2e1529ee1a225c1ec9252a  node.tar.gz" | sha256sum -c -
+      - tar xzf node.tar.gz --strip-components=1 -C /usr/local/
     init:
-      - npm ci
-    # onnxruntime-react-native ships a prebuilt .aar / .so and pulls a prebuilt
-    # onnxruntime-android aar from Maven. The foss flavor never uses it (the
-    # varied mix runs a pure-JS embedder), so delete it before the scan and
-    # build. RN autolinking then excludes an absent package entirely — VERIFIED:
-    # with it removed, `assembleFossRelease` builds clean and the whole build
-    # references onnxruntime zero times (no aar fetch, no .so, no Gradle project).
-    scandelete:
+      # subdir is android/app; go back to the JS project root for install.
+      # --ignore-scripts blocks postinstall scripts from pulling/running binaries
+      # (also skips our onnxruntime patch-package step, which foss doesn't need).
+      - cd ../.. && npm ci --ignore-scripts
+    # onnxruntime-react-native ships a prebuilt .aar/.so and pulls a prebuilt
+    # maven aar. foss never uses it (pure-JS embedder), so delete it: RN
+    # autolinking then excludes an absent package entirely (verified locally —
+    # assembleFossRelease builds with zero onnxruntime references).
+    rm:
       - node_modules/onnxruntime-react-native
     gradle:
       - foss
-    output: build/outputs/apk/foss/release/app-foss-release.apk
+    # node_modules carries other prebuilt binaries (Hermes compiler, JSC, etc.)
+    # that the scanner flags. The idiom (see com.mattermost.rnbeta.yml) is to
+    # scandelete node_modules and scanignore back the specific FLOSS paths the
+    # Android/Metro build genuinely needs. The exact list is RN-version-specific
+    # — FINALIZE by running `fdroid build -l` and adding each flagged-but-needed
+    # path. Starter set below (expect to extend it):
+    scandelete:
+      - node_modules
+    scanignore:
+      - node_modules/react-native/ReactAndroid
+      - node_modules/react-native/sdks/hermesc
+      - node_modules/react-native/sdks/hermes-engine
+      - node_modules/@react-native/gradle-plugin
+    # Our gradle release currently signs with the debug keystore (for sideload
+    # convenience). F-Droid signs with its own key, so for submission the release
+    # should be UNSIGNED — drop the debug signingConfig from the release buildType
+    # so this produces app-foss-release-unsigned.apk, then point output there.
+    output: build/outputs/apk/foss/release/app-foss-release-unsigned.apk
 
+AntiFeatures: []          # none expected; F-Droid assigns any during review
 AutoUpdateMode: Version v%v
 UpdateCheckMode: Tags
 CurrentVersion: 1.0-foss
