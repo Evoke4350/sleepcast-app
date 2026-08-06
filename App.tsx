@@ -24,6 +24,7 @@ import PlayerScreen from "./src/screens/PlayerScreen";
 import RestScreen from "./src/screens/RestScreen";
 import GettingUpScreen from "./src/screens/GettingUpScreen";
 import YouTubeNightScreen from "./src/screens/YouTubeNightScreen";
+import { YOUTUBE } from "./src/features";
 
 // Must run before anything touches the shared code, which reads localStorage
 // synchronously at module scope in places.
@@ -282,7 +283,7 @@ export default function App() {
     lineupRef.current = r.lineup;
     playedIdsRef.current = [];
     variedRef.current = r.wasVaried;
-    if (isYouTubeLineup([r.lead])) {
+    if (YOUTUBE && isYouTubeLineup([r.lead])) {
       const trim = loadState().settings.feedTrim[r.lead.feedId] ?? 1;
       setYtSession({ lineup: r.lineup, minutes, trim });
       return;
@@ -300,8 +301,9 @@ export default function App() {
     // Currently unreachable: YouTubeNightScreen never calls saveLastNight,
     // so `last` (from loadLastNight()) can never be a YouTube-lead night —
     // resume-after-fade for YouTube is deferred. Kept for when it lands,
-    // rather than left to silently do the wrong thing if it does.
-    if (isYouTubeLineup([r.lead])) {
+    // rather than left to silently do the wrong thing if it does. Gated on
+    // YOUTUBE so the foss build can never route here if it ever becomes reachable.
+    if (YOUTUBE && isYouTubeLineup([r.lead])) {
       const trim = loadState().settings.feedTrim[r.lead.feedId] ?? 1;
       setYtSession({ lineup: last.pool, minutes: r.minutes, trim });
       return;

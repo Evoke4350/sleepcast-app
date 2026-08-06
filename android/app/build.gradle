@@ -7,6 +7,11 @@ apply plugin: "com.facebook.react"
  * By default you don't need to apply any configuration, just uncomment the lines you need.
  */
 react {
+    // With the `dist` flavor dimension, debug variants are named fullDebug /
+    // fossDebug (not plain "debug"), so they must be listed here or the plugin
+    // embeds a JS bundle instead of loading from Metro — breaking the dev loop.
+    debuggableVariants = ["fullDebug", "fossDebug"]
+
     /* Folders */
     //   The root of your project, i.e. where "package.json" lives. Default is '../..'
     // root = file("../../")
@@ -109,6 +114,86 @@ android {
             signingConfig signingConfigs.debug
             minifyEnabled enableProguardInReleaseBuilds
             proguardFiles getDefaultProguardFile("proguard-android.txt"), "proguard-rules.pro"
+        }
+    }
+
+    // Distribution flavors. `full` is the default build (unchanged). `foss` is
+    // the F-Droid build: same code minus YouTube, with a pure-JS varied-mix and
+    // no prebuilt onnxruntime binary or MiniLM model (the metro resolver swaps
+    // the JS; the onnxruntime .so is stripped below). Side-by-side package id so
+    // both install together. See docs/specs/2026-08-06-fdroid-flavor-design.md.
+    flavorDimensions "dist"
+    productFlavors {
+        full {
+            dimension "dist"
+            // default package id (com.sleepcastapp) — unchanged
+        }
+        foss {
+            dimension "dist"
+            applicationIdSuffix ".foss"
+            versionNameSuffix "-foss"
+        }
+    }
+}
+
+// The foss flavor must ship no prebuilt onnxruntime binary. onnxruntime-react-
+// native pulls a prebuilt onnxruntime-android aar whose libonnxruntime.so is the
+// F-Droid blocker (Microsoft's prebuilt ORT), alongside the built-from-source
+// libonnxruntimejsi.so JSI glue. Strip all onnxruntime .so from the foss APK.
+// foss's JS never imports onnxruntime (embed swapped to the pure-JS embedder), so
+// the TurboModule is never instantiated and no .so is ever dlopen'd — the strip
+// leaves no dangling load. full keeps them.
+androidComponents {
+    onVariants(selector().withFlavor("dist", "foss")) { variant ->
+        variant.packaging.jniLibs.excludes.add("**/libonnxruntime*.so")
+    }
+}
+
+// Ensure the foss variants' embedded JS bundle runs Metro with the FOSS swap, so
+// the packaged bundle uses the pure-JS embedder + YouTube stub (no onnxruntime,
+// no 23 MB model). RN 0.86's BundleHermesCTask is a plain DefaultTask that shells
+// out via ExecOperations.exec inheriting the daemon env — it exposes no way to set
+// a per-task env directly. But it DOES expose `nodeExecutableAndArgs`, which is
+// prepended to the bundle command line. Wrapping it in `env SLEEPCAST_FOSS=1`
+// makes the command literally `env SLEEPCAST_FOSS=1 node cli.js bundle …`, so the
+// resolver swap fires WITHOUT needing a `SLEEPCAST_FOSS=1 ./gradlew` prefix.
+// `env` is present on every Linux/macOS build host (incl. F-Droid's).
+afterEvaluate {
+    tasks.matching { it.name =~ /^createBundleFoss.*JsAndAssets$/ }.configureEach { t ->
+        def base = t.nodeExecutableAndArgs.getOrElse(["node"])
+        t.nodeExecutableAndArgs.set(["env", "SLEEPCAST_FOSS=1"] + base)
+        // Metro's --assets-dest never deletes orphaned assets, so an incremental
+        // rebuild after the swap changed would leave a stale model.onnx in the
+        // output and package it. Clear the bundle/asset output dirs first so each
+        // foss bundle reflects only the current (swapped) module graph.
+        t.doFirst {
+            t.jsBundleDir.get().asFile.deleteDir()
+            t.resourcesDir.get().asFile.deleteDir()
+        }
+    }
+}
+
+// Fail-closed guard: if the swap ever silently fails to apply, the foss embedded
+// bundle would pull in the full JS — dragging the 23 MB MiniLM model into the APK
+// (AGP renames it, e.g. res/yt.onnx, so a filename grep is not enough) and
+// referencing onnxruntime. Verify every packaged foss bundle asset dir and FAIL
+// the build if any onnxruntime .onnx model (a large .onnx) is present. Cheap
+// insurance against a forgotten env / a plugin change reopening the hole.
+afterEvaluate {
+    tasks.matching { it.name =~ /^createBundleFoss.*JsAndAssets$/ }.configureEach { t ->
+        t.doLast {
+            [t.jsBundleDir.get().asFile, t.resourcesDir.get().asFile].each { root ->
+                if (root.exists()) {
+                    root.eachFileRecurse { f ->
+                        if (f.isFile() && f.name.endsWith('.onnx') && f.length() > 1_000_000) {
+                            throw new GradleException(
+                                "FOSS build guard: a large .onnx model (${f.length()} bytes at ${f}) " +
+                                "was packaged by ${t.name} — the SLEEPCAST_FOSS resolver swap did NOT apply. " +
+                                "The foss APK must ship no ML model. Check metro-foss-resolve.js / the env wrapper.")
+                        }
+                    }
+                }
+            }
         }
     }
 }
