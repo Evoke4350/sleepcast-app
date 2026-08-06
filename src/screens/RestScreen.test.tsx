@@ -53,3 +53,49 @@ test("answering 'no' to a scored night tightens the detector", () => {
   expect(loadParams()!.alpha).not.toBe(alpha0); // tightened
   expect(onClose).toHaveBeenCalled();
 });
+
+test("yes button has accessible role and label", () => {
+  localStorage.clear();
+  seedSleptNight();
+  let tree!: TestRenderer.ReactTestRenderer;
+  act(() => { tree = TestRenderer.create(<RestScreen onClose={() => {}} />); });
+  const yesBtn = tree.root.findByProps({ testID: "rest-label-yes" });
+  expect(yesBtn.props.accessibilityRole).toBe("button");
+  expect(yesBtn.props.accessibilityLabel).toBe("yes, I fell asleep to it");
+});
+
+test("no button has accessible role and label", () => {
+  localStorage.clear();
+  seedSleptNight();
+  let tree!: TestRenderer.ReactTestRenderer;
+  act(() => { tree = TestRenderer.create(<RestScreen onClose={() => {}} />); });
+  const noBtn = tree.root.findByProps({ testID: "rest-label-no" });
+  expect(noBtn.props.accessibilityRole).toBe("button");
+  expect(noBtn.props.accessibilityLabel).toBe("no, I stayed awake");
+});
+
+test("back button has accessible label", () => {
+  localStorage.clear();
+  seedSleptNight();
+  let tree!: TestRenderer.ReactTestRenderer;
+  act(() => { tree = TestRenderer.create(<RestScreen onClose={() => {}} />); });
+  const backBtn = tree.root.findByProps({ testID: "rest-back" });
+  expect(backBtn.props.accessibilityRole).toBe("button");
+  expect(backBtn.props.accessibilityLabel).toBe("back");
+});
+
+test("stat container has non-empty accessibilityLabel", () => {
+  localStorage.clear();
+  seedSleptNight();
+  let tree!: TestRenderer.ReactTestRenderer;
+  act(() => { tree = TestRenderer.create(<RestScreen onClose={() => {}} />); });
+  const nightsElement = tree.root.findByProps({ testID: "rest-nights" });
+  let statContainer: TestRenderer.ReactTestInstance | null = nightsElement;
+  // Find the parent stat container
+  while (statContainer && !statContainer.props.accessibilityLabel) {
+    statContainer = statContainer.parent;
+  }
+  expect(statContainer).toBeDefined();
+  expect(statContainer?.props.accessibilityLabel).toBeTruthy();
+  expect(statContainer?.props.accessible).toBe(true);
+});
