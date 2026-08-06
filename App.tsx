@@ -24,6 +24,7 @@ import PlayerScreen from "./src/screens/PlayerScreen";
 import RestScreen from "./src/screens/RestScreen";
 import GettingUpScreen from "./src/screens/GettingUpScreen";
 import YouTubeNightScreen from "./src/screens/YouTubeNightScreen";
+import { YOUTUBE } from "./src/features";
 
 // Must run before anything touches the shared code, which reads localStorage
 // synchronously at module scope in places.
@@ -282,7 +283,7 @@ export default function App() {
     lineupRef.current = r.lineup;
     playedIdsRef.current = [];
     variedRef.current = r.wasVaried;
-    if (isYouTubeLineup([r.lead])) {
+    if (YOUTUBE && isYouTubeLineup([r.lead])) {
       const trim = loadState().settings.feedTrim[r.lead.feedId] ?? 1;
       setYtSession({ lineup: r.lineup, minutes, trim });
       return;

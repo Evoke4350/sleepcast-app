@@ -8,6 +8,7 @@ import { nextTrim } from "../logic/trim";
 import type { AppState } from "../../vendor/player/src/lib/store";
 import { youtubeFeedUrl, isYouTubeFeedUrl } from "../platform/youtube-url";
 import { resolveYouTubeFeedUrl } from "../platform/youtube-add";
+import { YOUTUBE } from "../features";
 import { qualifiesForStepBack, isQuiet, quietUntilFrom } from "../../vendor/player/src/lib/rest/stepback";
 import { loadNights, loadQuietUntil, saveQuietUntil, loadStepBackAsked, markStepBackAsked } from "../../vendor/player/src/lib/rest/ledger";
 
@@ -51,6 +52,10 @@ export default function SetupScreen({ onStart, onResume, resumeAvailable, onOpen
     if (!trimmed) return;
     setFeedError(null);
     if (youtubeFeedUrl(trimmed)) {
+      if (!YOUTUBE) {
+        setFeedError("YouTube isn't available in this build");
+        return;
+      }
       const resolved = await resolveYouTubeFeedUrl(trimmed);
       if (!resolved.ok) {
         setFeedError(resolved.reason === "video" ? "that's a video, not a channel" : "couldn't find that channel");
