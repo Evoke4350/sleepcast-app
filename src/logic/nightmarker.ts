@@ -5,6 +5,12 @@ import { appendNight } from "../../vendor/player/src/lib/rest/ledger";
 
 export interface LiveMarker {
   episodeId: string; startedAt: number; timerMinutes: number;
+  // The whole night's length. After a mid-night skip, `timerMinutes` shrinks to
+  // the current episode's remaining window (so the heard cap below stays right
+  // for that episode), but the rest-ledger night should still record the full
+  // night — that's what `nightMinutes` carries. Optional for markers written
+  // before this field existed; falls back to `timerMinutes`.
+  nightMinutes?: number;
   lineup: Episode[]; playedIds: string[]; feedTitles: Record<string, string>; wasVaried: boolean;
 }
 
@@ -33,7 +39,9 @@ export function reconcileToLastNight(m: LiveMarker, now: number): void {
   // count (and rollup stats that key off it) aren't silently short one entry.
   appendNight({
     startedAt: m.startedAt,
-    timerMinutes: m.timerMinutes,
+    // The full night length, not the (possibly shrunk-by-skip) current-episode
+    // window — so stats keyed on timerMinutes aren't short for a skipped night.
+    timerMinutes: m.nightMinutes ?? m.timerMinutes,
     endedVia: "faded",
     sleptAtMs: null,
     timeToSleepMs: null,
