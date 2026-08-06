@@ -11,8 +11,8 @@ fastlane/metadata/android/en-US/
   changelogs/1.txt             notes for versionCode 1 (add 2.txt, 3.txt, …)
   images/
     phoneScreenshots/*.png     real device captures (foss build, Pixel)
-    icon.png                   OPTIONAL — see below
-    featureGraphic.png         OPTIONAL 1024×500 banner
+    icon.png                   512×512 listing icon (see below)
+    featureGraphic.png         1024×500 banner (see below)
 ```
 
 ## Icon
@@ -29,6 +29,19 @@ To regenerate the PNG from the SVG:
 sed 's/width="108" height="108"/width="512" height="512"/' assets/logo.svg > /tmp/logo512.svg
 qlmanage -t -s 512 -o /tmp /tmp/logo512.svg && mv /tmp/logo512.svg.png fastlane/metadata/android/en-US/images/icon.png
 # or with librsvg:  rsvg-convert -w 512 -h 512 assets/logo.svg > .../images/icon.png
+```
+
+## Feature graphic
+
+`images/featureGraphic.png` is the 1024×500 store banner (moon+stars logo +
+"sleepcast" wordmark + tagline on the night sky), from master
+`assets/feature-graphic.svg`. That SVG is authored as a 1024-square with the
+banner centred vertically, so a centre-crop yields an exact 1024×500:
+
+```
+# macOS: render the square, then centre-crop to 1024×500
+qlmanage -t -s 1024 -o /tmp assets/feature-graphic.svg
+sips -c 500 1024 /tmp/feature-graphic.svg.png --out fastlane/metadata/android/en-US/images/featureGraphic.png
 ```
 
 ## Build recipe

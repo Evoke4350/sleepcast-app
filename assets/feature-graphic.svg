@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#14111f"/>
+      <stop offset="1" stop-color="#09070e"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#f0dcb8" stop-opacity="0.10"/>
+      <stop offset="1" stop-color="#f0dcb8" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <!-- Authored as a 1024-square with the 1024x500 banner centered vertically
+       (y 262..762), so a `sips -c 500 1024` centre-crop yields an exact
+       1024x500 featureGraphic. See fastlane/README.md. -->
+  <g transform="translate(0,262)">
+    <rect width="1024" height="500" fill="url(#sky)"/>
+
+    <!-- faint background stars -->
+    <g fill="#4a4664">
+      <circle cx="520" cy="70" r="2"/><circle cx="610" cy="120" r="1.5"/><circle cx="700" cy="60" r="2.5"/>
+      <circle cx="860" cy="110" r="1.5"/><circle cx="940" cy="200" r="2"/><circle cx="780" cy="180" r="1.5"/>
+      <circle cx="900" cy="330" r="2"/><circle cx="640" cy="400" r="1.5"/><circle cx="560" cy="430" r="2"/>
+      <circle cx="990" cy="420" r="1.5"/><circle cx="470" cy="200" r="1.5"/><circle cx="830" cy="440" r="2"/>
+    </g>
+
+    <!-- soft glow behind the moon -->
+    <circle cx="195" cy="261" r="170" fill="url(#glow)"/>
+
+    <!-- moon + stars (app logo art, scaled from its 108 canvas) -->
+    <g transform="translate(70,110) scale(2.6)">
+      <path fill="#f0dcb8" fill-rule="evenodd"
+        d="M21,58 a27,27 0 1,0 54,0 a27,27 0 1,0 -54,0 Z M38,49 a23,23 0 1,0 46,0 a23,23 0 1,0 -46,0 Z"/>
+      <path fill="#f0dcb8" d="M76,27 L77.5,32.5 L83,34 L77.5,35.5 L76,41 L74.5,35.5 L69,34 L74.5,32.5 Z"/>
+      <path fill="#f0dcb8" d="M82,49 L83.1,52.9 L87,54 L83.1,55.1 L82,59 L80.9,55.1 L77,54 L80.9,52.9 Z"/>
+      <path fill="#f0dcb8" d="M64,18.5 L65.2,22.8 L69.5,24 L65.2,25.2 L64,29.5 L62.8,25.2 L58.5,24 L62.8,22.8 Z"/>
+    </g>
+
+    <!-- wordmark + tagline -->
+    <text x="360" y="248" font-family="Helvetica, Arial, sans-serif" font-size="92" font-weight="600" fill="#f0dcb8" letter-spacing="1">sleepcast</text>
+    <text x="364" y="300" font-family="Helvetica, Arial, sans-serif" font-size="32" font-weight="300" fill="#b0a898" letter-spacing="2">fall asleep to podcasts</text>
+  </g>
+</svg>
