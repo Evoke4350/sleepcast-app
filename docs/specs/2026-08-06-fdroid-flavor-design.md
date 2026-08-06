@@ -31,13 +31,25 @@ The heavy pieces are pulled into the JS bundle by module-scope `require`s (`embe
 
 ### 2. Metro resolver swap (`metro.config.js`)
 
-When `process.env.SLEEPCAST_FOSS === "1"`, a `resolver.resolveRequest` rewrites imports of `./features`, `./platform/embed`, and `./youtube/YouTubePlayer` to their `.foss` counterparts. Result: the FOSS bundle contains the stubs, so **`model.onnx`, the vocab, `onnxruntime`, and `react-native-webview` are never referenced** → none ship in the foss bundle/APK. The default (no env) bundle is unchanged (full).
+When `process.env.SLEEPCAST_FOSS === "1"`, a `resolver.resolveRequest` rewrites imports of `./features`, `./platform/embed`, and `./youtube/YouTubePlayer` to their `.foss` counterparts. Result: the FOSS bundle contains the stubs, so **`model.onnx`, the vocab, the `onnxruntime` JS, `react-native-youtube-iframe`, and `react-native-webview` JS are never referenced** → none ship in the foss JS bundle/assets. The default (no env) bundle is unchanged (full).
 
-### 3. Gradle flavors + autolinking exclusion
+### 3. Gradle flavors + per-variant native strip
 
-- `react-native.config.js`: disable Android autolinking for `onnxruntime-react-native` and `react-native-webview` (`dependencies: { '<pkg>': { platforms: { android: null } } }`) so they aren't force-linked into every variant.
-- `android/app/build.gradle`: `flavorDimensions "dist"`; `productFlavors { full { dimension "dist" }; foss { dimension "dist"; applicationIdSuffix ".foss"; versionNameSuffix "-foss" } }`. Re-add the two deps **only** to full: `fullImplementation ...onnxruntime...`, `fullImplementation ...react-native-webview...` (matching how autolinking would have added them — resolve the exact `project(':...')`/aar coordinates from `node_modules/.../android`).
-- The per-flavor JS bundle: the RN Android `react { }`/bundle task must set `SLEEPCAST_FOSS=1` for the `foss*` variants (via `bundleCommand`/an env on the bundle task, or a `hermesFlags`/`extraPackagerArgs` hook — resolved at implementation time against RN 0.86's gradle plugin). The `onnxruntime` patch-package/postinstall stays (it's harmless in full; foss doesn't link it).
+Autolinking is **left untouched** (New Arch codegen is fragile to disable — `react-native-webview` ships a `RNCWebViewSpec` codegen module; `onnxruntime-react-native` is a legacy module with no codegen). Instead:
+
+- `android/app/build.gradle`: `flavorDimensions "dist"`; `productFlavors { full { dimension "dist" }; foss { dimension "dist"; applicationIdSuffix ".foss"; versionNameSuffix "-foss" } }`. Both flavors keep autolinking, so `full` is entirely unchanged and the New Arch codegen/registration for every native module is generated exactly as today.
+- **onnxruntime prebuilt `.so` strip (the F-Droid blocker):** `onnxruntime-react-native` pulls a prebuilt `com.microsoft.onnxruntime:onnxruntime-android` aar containing `libonnxruntime.so` + `libonnxruntime4j_jni.so`. Strip those from the `foss` APK via AGP's per-variant packaging:
+  ```groovy
+  androidComponents {
+      onVariants(selector().withFlavor("dist", "foss")) { variant ->
+          variant.packaging.jniLibs.excludes.add("**/libonnxruntime.so")
+          variant.packaging.jniLibs.excludes.add("**/libonnxruntime4j_jni.so")
+      }
+  }
+  ```
+  In foss the JS never calls onnxruntime (embed swapped), so the dormant `OnnxruntimeModule` Java class never `dlopen`s the missing `.so` — no crash. Full keeps the `.so`.
+- **`react-native-webview` stays autolinked in both flavors.** It's a FOSS library built from source (no prebuilt binary), and foss never navigates to a YouTube URL (JS swapped to the stub, UI gated), so the non-free youtube.com content is never loaded. Leaving it avoids breaking its codegen. No native strip needed.
+- **Per-flavor JS bundle env:** the RN gradle plugin's embedded-bundle task for `foss*` variants must run Metro with `SLEEPCAST_FOSS=1` so the resolver swaps. Primary: set the env on the generated `createBundleFoss*JsAndAssets` tasks in an `afterEvaluate`/`tasks.matching` hook. If RN 0.86's bundle task type doesn't accept an env override, **fallback:** a per-foss-variant custom bundle (disable the plugin's auto-bundle for foss, add a task that runs `SLEEPCAST_FOSS=1 npx react-native bundle …` into the variant's assets). The device/APK checks below catch either path failing. The `onnxruntime` patch-package/postinstall stays (harmless).
 - `patches/` + `pod install` (iOS) unaffected.
 
 ### 4. LICENSE
@@ -49,14 +61,14 @@ When `process.env.SLEEPCAST_FOSS === "1"`, a `resolver.resolveRequest` rewrites 
 - **JS:** `features.foss` sets `YOUTUBE=false`; `SetupScreen` with `YOUTUBE=false` (injected/mocked) rejects a YouTube add-URL. `embed.foss.embedTexts` returns L2-normalized `Float32Array[]` (assert unit length; assert two titles sharing words are closer by cosine than two with none — i.e. it produces usable diversity vectors), and `diversePick` over them yields a spread lineup. The `YouTubePlayer.foss` stub renders without importing webview. Existing tests (which run against the full `features`) stay green.
 - **Bundle check (CI-ish):** `SLEEPCAST_FOSS=1 npx react-native bundle --platform android --dev false --entry-file index.js --bundle-output /tmp/foss.jsbundle --assets-dest /tmp/foss-assets` → assert `/tmp/foss-assets` contains **no** `model.onnx` and the bundle string contains no `onnxruntime`/`RNCWebView`. The default bundle DOES contain them.
 - **On-device (Pixel 7), BOTH flavors:**
-  - `fossDebug`: builds + installs (`com.sleepcastapp.foss`), launches; the APK/libs contain **no** `libonnxruntime.so` / `libRNCWebView` and no 23 MB model; SetupScreen shows shuffle/spread/**varied** (varied now uses the pure-JS embedder — starting it produces a lineup, no crash), a YouTube URL is rejected, and a normal podcast night plays + fades + stops (core intact).
+  - `fossDebug`: builds + installs (`com.sleepcastapp.foss`), launches; the APK contains **no** `libonnxruntime.so` / `libonnxruntime4j_jni.so` and **no** 23 MB model (`react-native-webview` native may remain — it's FOSS and dormant); SetupScreen shows shuffle/spread/**varied** (varied now uses the pure-JS embedder — starting it produces a lineup, no crash), a YouTube URL is rejected, and a normal podcast night plays + fades + stops (core intact).
   - `fullDebug`: unchanged — varied-mix + YouTube still work.
 
 ## Scope
 
-- **In:** the `foss` Android flavor (flags, FOSS stubs, metro resolver swap, gradle flavor + autolinking exclusion + per-flavor bundle env, side-by-side package id), UI gating of varied/YouTube, the `LICENSE`, and a bundle + two-flavor device check.
-- **Out:** the actual F-Droid metadata recipe / repo submission (a separate, out-of-tree process); reproducible-build hardening; iOS flavoring; making onnxruntime build-from-source; the standing 16 KB `.so` alignment (an onnxruntime concern that the foss flavor sidesteps by dropping onnxruntime, and that the full flavor tracks separately).
+- **In:** the `foss` Android flavor (the `YOUTUBE` flag, the pure-JS embedder + YouTube stub, metro resolver swap, gradle flavor + per-variant onnxruntime `.so` strip + per-flavor bundle env, side-by-side package id), UI gating of YouTube, the `LICENSE`, and a bundle + two-flavor device check.
+- **Out:** the actual F-Droid metadata recipe / repo submission (a separate, out-of-tree process — including whether F-Droid's scanner accepts a maven-pulled onnxruntime aar that's stripped from the APK, vs. requiring the dependency fully absent); reproducible-build hardening; iOS flavoring; making onnxruntime build-from-source; the standing 16 KB `.so` alignment (an onnxruntime concern that the foss flavor sidesteps by stripping onnxruntime, and that the full flavor tracks separately).
 
 ## Done means
 
-`./gradlew assembleFossDebug` (or `run-android --mode=fossDebug`) produces `com.sleepcastapp.foss` that installs alongside the full app, launches, plays a podcast night with the full timer/detector/leveling/rest features, shows **no** varied-mix or YouTube, and whose APK contains **no** onnxruntime `.so`, no `react-native-webview`, and no MiniLM model — while `full` is byte-for-behaviour unchanged. The repo has a FOSS `LICENSE`.
+`./gradlew assembleFossDebug` (or `run-android --mode=fossDebug`) produces `com.sleepcastapp.foss` that installs alongside the full app, launches, plays a podcast night with the full timer/detector/leveling/rest features, offers a **working varied-mix** (pure-JS lexical) but **no YouTube**, and whose APK contains **no** onnxruntime `.so` and **no** MiniLM model — while `full` is byte-for-behaviour unchanged. The repo has a FOSS `LICENSE`.
