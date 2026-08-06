@@ -16,7 +16,17 @@ import { loadNights, loadQuietUntil, saveQuietUntil, loadStepBackAsked, markStep
 // All >= the vendor store's TIMER_MIN (5); a sub-minimum chip would start that
 // many minutes but silently persist as 5, so the selection wouldn't survive a
 // relaunch honestly.
-const TIMERS = [5, 45, 60];
+// Sentinel timer value: "all night" — no fade/stop, auto-advance through the
+// lineup. -1 (never a real minute count).
+export const ALL_NIGHT = -1;
+const KEY_ALL_NIGHT = "sleepcast2.allnight";
+const TIMERS = [5, 45, 60, ALL_NIGHT];
+
+/** Whether the persisted timer selection is "all night". App uses this so a
+ *  resumed night keeps all-night mode (the vendor timer store can't hold -1). */
+export function isAllNightSelected(): boolean {
+  return localStorage.getItem(KEY_ALL_NIGHT) === "1";
+}
 
 interface SetupProps {
   onStart: (strategy: "shuffle" | "spread" | "varied", minutes: number) => void;
@@ -25,14 +35,20 @@ interface SetupProps {
   onOpenRest?: () => void;
   // Set while a podcast night is playing but the listener has gone back home;
   // renders a banner that taps back into the player. Playback is untouched.
-  nowPlaying?: { title: string; remaining: number };
+  // `allNight` shows "all night" instead of a countdown.
+  nowPlaying?: { title: string; remaining: number; allNight?: boolean };
   onReturnToPlayer?: () => void;
 }
 
 export default function SetupScreen({ onStart, onResume, resumeAvailable, onOpenRest, nowPlaying, onReturnToPlayer }: SetupProps) {
   const [state, setState] = useState<AppState>(() => loadState());
   const [url, setUrl] = useState("");
-  const [minutes, setMinutes] = useState(state.settings.timerMinutes);
+  // All-night persists via its own flag: the vendor saveTimerMinutes clamps to a
+  // real minute range, so it can't store the -1 sentinel. On mount, an set flag
+  // wins over the last numeric timer.
+  const [minutes, setMinutes] = useState(
+    () => (localStorage.getItem(KEY_ALL_NIGHT) === "1" ? ALL_NIGHT : state.settings.timerMinutes)
+  );
   const [feedError, setFeedError] = useState<string | null>(null);
   // Eligibility for the step-back offer, computed once on mount: not
   // currently quiet, not asked within a quiet window of a previous ask, and
@@ -90,7 +106,15 @@ export default function SetupScreen({ onStart, onResume, resumeAvailable, onOpen
     }
     persist(next);
   }
-  function pickTimer(m: number) { setMinutes(m); saveTimerMinutes(m); }
+  function pickTimer(m: number) {
+    setMinutes(m);
+    if (m === ALL_NIGHT) {
+      localStorage.setItem(KEY_ALL_NIGHT, "1"); // vendor saveTimerMinutes can't hold -1
+    } else {
+      localStorage.removeItem(KEY_ALL_NIGHT);
+      saveTimerMinutes(m);
+    }
+  }
 
   // A night can only be all-YouTube or all-podcast: the player has no way to
   // mix the two backends within one pool, so enabling both kinds at once
@@ -110,11 +134,11 @@ export default function SetupScreen({ onStart, onResume, resumeAvailable, onOpen
           style={s.banner}
           onPress={onReturnToPlayer}
           accessibilityRole="button"
-          accessibilityLabel={`return to now playing, ${nowPlaying.title}, ${formatTime(nowPlaying.remaining)} remaining`}
+          accessibilityLabel={`return to now playing, ${nowPlaying.title}, ${nowPlaying.allNight ? "all night" : `${formatTime(nowPlaying.remaining)} remaining`}`}
         >
           <Text style={s.bannerLabel}>♪ now playing</Text>
           <Text style={s.bannerTitle} numberOfLines={1}>{nowPlaying.title}</Text>
-          <Text style={s.bannerTime}>{formatTime(nowPlaying.remaining)}  ›</Text>
+          <Text style={s.bannerTime}>{nowPlaying.allNight ? "all night" : formatTime(nowPlaying.remaining)}  ›</Text>
         </TouchableOpacity>
       )}
       {showStepBack && (
@@ -195,19 +219,22 @@ export default function SetupScreen({ onStart, onResume, resumeAvailable, onOpen
 
       <Text style={s.h}>timer</Text>
       <View style={s.row}>
-        {TIMERS.map((m) => (
-          <TouchableOpacity
-            key={m}
-            testID={`timer-${m}`}
-            accessibilityRole="button"
-            accessibilityLabel={`${m} minute timer`}
-            accessibilityState={{ selected: minutes === m }}
-            style={[s.chip, minutes === m && s.chipOn]}
-            onPress={() => pickTimer(m)}
-          >
-            <Text style={s.btnT}>{m}m</Text>
-          </TouchableOpacity>
-        ))}
+        {TIMERS.map((m) => {
+          const all = m === ALL_NIGHT;
+          return (
+            <TouchableOpacity
+              key={m}
+              testID={all ? "timer-all-night" : `timer-${m}`}
+              accessibilityRole="button"
+              accessibilityLabel={all ? "all night timer, plays until you stop" : `${m} minute timer`}
+              accessibilityState={{ selected: minutes === m }}
+              style={[s.chip, minutes === m && s.chipOn]}
+              onPress={() => pickTimer(m)}
+            >
+              <Text style={s.btnT}>{all ? "all night" : `${m}m`}</Text>
+            </TouchableOpacity>
+          );
+        })}
       </View>
 
       <Text style={s.h}>get-up nudge</Text>

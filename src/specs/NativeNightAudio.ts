@@ -7,6 +7,10 @@ export interface NightEndedEvent {
   heardSeconds: number;
 }
 
+export interface TrackEndedEvent {
+  episodeId: string;
+}
+
 // Deliberately small. The app needs to play a URL, set a volume, keep playing
 // while backgrounded, and publish Now Playing information. It does not need a
 // queue, gapless playback, crossfading, casting or download management — the
@@ -41,6 +45,9 @@ export interface Spec extends TurboModule {
   cancelTimer(): void;
   /** Fires once when the native timer reaches zero and stops playback. */
   readonly onNightEnded: EventEmitter<NightEndedEvent>;
+  /** Fires when the current track finishes playing on its own (not a timer
+   *  stop). Drives the all-night auto-advance; ignored on timed nights. */
+  readonly onTrackEnded: EventEmitter<TrackEndedEvent>;
 }
 
 // Resolved lazily, on first use, and NOT at module scope.

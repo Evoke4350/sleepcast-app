@@ -34,6 +34,7 @@ jest.mock("../src/specs/NativeNightAudio", () => ({ getNightAudio: () => mockAud
 
 function freshAudio() {
   let endedHandler: ((e: any) => void) | null = null;
+  let trackEndedHandler: ((e: any) => void) | null = null;
   return {
     calls: [] as any[],
     play: jest.fn(async () => {}),
@@ -44,6 +45,8 @@ function freshAudio() {
     cancelTimer: jest.fn(function (this: any) { this.calls.push(["cancel"]); }),
     onNightEnded: (h: (e: any) => void) => { endedHandler = h; return { remove() {} }; },
     fireEnded: (e: any) => endedHandler && endedHandler(e),
+    onTrackEnded: (h: (e: any) => void) => { trackEndedHandler = h; return { remove() {} }; },
+    fireTrackEnded: (e: any) => trackEndedHandler && trackEndedHandler(e),
     // Defaults to "still playing" so tests above that start a night without
     // ever ending it (and so leave a real live-night marker behind in the
     // shared MMKV-backed storage) don't get that marker swept up by a later
@@ -273,6 +276,126 @@ test("the next button advances to a different pick", async () => {
   expect(after).not.toBe(before);
   // a second play happened (lead + the advance)
   expect(mockAudio.play.mock.calls.length).toBeGreaterThanOrEqual(2);
+  act(() => { tree.unmount(); });
+});
+
+// Slice 11: "all night" — no fade/stop timer; a natural track-end auto-advances.
+const SPREAD_POOL = {
+  pool: [
+    { id: "a", title: "A", url: "https://x/a.mp3", feedId: "f", date: "2024-01-01" },
+    { id: "b", title: "B", url: "https://x/b.mp3", feedId: "g", date: "2020-01-01" },
+    { id: "c", title: "C", url: "https://x/c.mp3", feedId: "h", date: "2018-01-01" },
+  ],
+  feedTitles: { f: "F", g: "G", h: "H" }, errors: [] as string[],
+};
+
+async function startAllNightSpread() {
+  mockAudio = freshAudio();
+  mockPoolResult = { ...SPREAD_POOL };
+  let tree!: TestRenderer.ReactTestRenderer;
+  await act(async () => { tree = TestRenderer.create(<App />); });
+  await act(async () => {});
+  await act(async () => { tree.root.findByProps({ testID: "timer-all-night" }).props.onPress(); });
+  await act(async () => { tree.root.findByProps({ testID: "start-spread" }).props.onPress(); });
+  return tree;
+}
+
+test("all night starts with no fade/stop timer and the player shows 'all night'", async () => {
+  mockAudio = freshAudio();
+  mockPoolResult = { pool: [{ id: "a", title: "A Quiet Night", url: "https://x/a.mp3", feedId: "f", date: "2024-01-01" }], feedTitles: { f: "F" }, errors: [] };
+  let tree!: TestRenderer.ReactTestRenderer;
+  await act(async () => { tree = TestRenderer.create(<App />); });
+  await act(async () => {});
+  await act(async () => { tree.root.findByProps({ testID: "timer-all-night" }).props.onPress(); });
+  await act(async () => { tree.root.findByProps({ testID: "start-shuffle" }).props.onPress(); });
+  expect(mockAudio.play).toHaveBeenCalledWith("https://x/a.mp3", 0);
+  expect(mockAudio.scheduleFadeAndStop).not.toHaveBeenCalled(); // no timer in all-night
+  expect(tree.root.findByProps({ testID: "countdown" }).props.children).toBe("all night");
+  act(() => { tree.unmount(); });
+});
+
+test("all night auto-advances to another pick when a track ends naturally", async () => {
+  let nowValue = 1_000_000;
+  const spy = jest.spyOn(Date, "now").mockImplementation(() => nowValue);
+  let tree!: TestRenderer.ReactTestRenderer;
+  try {
+    tree = await startAllNightSpread(); // starts at t=1_000_000
+    const before = tree.root.findByProps({ testID: "nowPlaying" }).props.children;
+    const playsBefore = mockAudio.play.mock.calls.length;
+    nowValue = 1_003_000; // 3s later — past the instant-end floor
+    await act(async () => { mockAudio.fireTrackEnded({ episodeId: "whatever" }); });
+    expect(mockAudio.play.mock.calls.length).toBeGreaterThan(playsBefore); // advanced
+    expect(mockAudio.scheduleFadeAndStop).not.toHaveBeenCalled();          // still no timer
+    expect(tree.root.findByProps({ testID: "nowPlaying" }).props.children).not.toBe(before);
+  } finally {
+    spy.mockRestore();
+    act(() => { tree.unmount(); });
+  }
+});
+
+test("all night + shuffle replays the episode when it ends (no silence)", async () => {
+  let nowValue = 1_000_000;
+  const spy = jest.spyOn(Date, "now").mockImplementation(() => nowValue);
+  mockAudio = freshAudio();
+  mockPoolResult = { pool: [{ id: "a", title: "A", url: "https://x/a.mp3", feedId: "f", date: "2024-01-01" }], feedTitles: { f: "F" }, errors: [] };
+  let tree!: TestRenderer.ReactTestRenderer;
+  try {
+    await act(async () => { tree = TestRenderer.create(<App />); });
+    await act(async () => {});
+    await act(async () => { tree.root.findByProps({ testID: "timer-all-night" }).props.onPress(); });
+    await act(async () => { tree.root.findByProps({ testID: "start-shuffle" }).props.onPress(); });
+    const aPlaysBefore = mockAudio.play.mock.calls.filter((c: any[]) => c[0] === "https://x/a.mp3").length;
+    nowValue = 1_004_000; // 4s later — past the instant-end floor
+    await act(async () => { mockAudio.fireTrackEnded({ episodeId: "a" }); });
+    // the lone episode is replayed (a 2nd play of "a"), and still no timer armed
+    const aPlaysAfter = mockAudio.play.mock.calls.filter((c: any[]) => c[0] === "https://x/a.mp3").length;
+    expect(aPlaysAfter).toBeGreaterThan(aPlaysBefore);
+    expect(mockAudio.scheduleFadeAndStop).not.toHaveBeenCalled();
+  } finally {
+    spy.mockRestore();
+    act(() => { tree.unmount(); });
+  }
+});
+
+test("all night ignores an instant (<2s) track-end so a bad feed can't spin", async () => {
+  mockAudio = freshAudio();
+  mockPoolResult = { pool: [{ id: "a", title: "A", url: "https://x/a.mp3", feedId: "f", date: "2024-01-01" }], feedTitles: { f: "F" }, errors: [] };
+  let tree!: TestRenderer.ReactTestRenderer;
+  await act(async () => { tree = TestRenderer.create(<App />); });
+  await act(async () => {});
+  await act(async () => { tree.root.findByProps({ testID: "timer-all-night" }).props.onPress(); });
+  await act(async () => { tree.root.findByProps({ testID: "start-shuffle" }).props.onPress(); });
+  const playsBefore = mockAudio.play.mock.calls.length;
+  await act(async () => { mockAudio.fireTrackEnded({ episodeId: "a" }); }); // fires ~0ms after start
+  expect(mockAudio.play.mock.calls.length).toBe(playsBefore); // floored — no replay
+  act(() => { tree.unmount(); });
+});
+
+test("resuming an all-night night stays all-night (not a short timed night)", async () => {
+  mockAudio = freshAudio();
+  mockPoolResult = { pool: [{ id: "a", title: "A", url: "https://x/a.mp3", feedId: "f", date: "2024-01-01" }], feedTitles: { f: "F" }, errors: [] };
+  saveLastNight({ pool: [{ id: "a", title: "A", url: "https://x/a.mp3", feedId: "f", date: "2024-01-01" } as any, { id: "b", title: "B", url: "https://x/b.mp3", feedId: "f", date: "2024-01-01" } as any], playedIds: ["a"], feedTitles: {}, artworkByFeedId: {}, skipIntroByFeedId: {}, endedVia: "faded", endedAt: Date.now(), wasVaried: false });
+  localStorage.setItem("sleepcast2.allnight", "1"); // all-night was the selected mode
+  let tree!: TestRenderer.ReactTestRenderer;
+  await act(async () => { tree = TestRenderer.create(<App />); });
+  await act(async () => {});
+  await act(async () => { tree.root.findByProps({ testID: "start-resume" }).props.onPress(); });
+  expect(mockAudio.scheduleFadeAndStop).not.toHaveBeenCalled(); // resumed as all-night, no timer
+  expect(tree.root.findByProps({ testID: "countdown" }).props.children).toBe("all night");
+  act(() => { tree.unmount(); });
+});
+
+test("a timed night ignores onTrackEnded (the fade timer owns the ending)", async () => {
+  mockAudio = freshAudio();
+  mockPoolResult = { ...SPREAD_POOL };
+  let tree!: TestRenderer.ReactTestRenderer;
+  await act(async () => { tree = TestRenderer.create(<App />); });
+  await act(async () => {});
+  await act(async () => { tree.root.findByProps({ testID: "timer-5" }).props.onPress(); });
+  await act(async () => { tree.root.findByProps({ testID: "start-spread" }).props.onPress(); });
+  const playsBefore = mockAudio.play.mock.calls.length; // 1 (lead)
+  await act(async () => { mockAudio.fireTrackEnded({ episodeId: "a" }); });
+  expect(mockAudio.play.mock.calls.length).toBe(playsBefore); // NO auto-advance on a timed night
   act(() => { tree.unmount(); });
 });
 

@@ -19,6 +19,8 @@ interface PlayerProps {
   // Leave the player for the home/setup screen WITHOUT stopping playback (the
   // native foreground service keeps the audio + timer going).
   onHome?: () => void;
+  // All-night mode: no countdown, show "all night" instead.
+  allNight?: boolean;
 }
 
 function humanTime(sec: number): string {
@@ -31,7 +33,7 @@ function humanTime(sec: number): string {
 
 export default function PlayerScreen({
   title, remaining, volume, onStop, onInteract,
-  lineup, currentId, feedTitles, onSelect, onNext, onHome,
+  lineup, currentId, feedTitles, onSelect, onNext, onHome, allNight,
 }: PlayerProps) {
   const showList = !!lineup && lineup.length > 1;
   return (
@@ -42,7 +44,7 @@ export default function PlayerScreen({
     >
       <Text style={s.moon} accessibilityElementsHidden={true} importantForAccessibility="no-hide-descendants">☾</Text>
       <Text style={s.title} testID="nowPlaying" numberOfLines={2} accessibilityRole="header">{title}</Text>
-      <Text style={s.dim} testID="countdown" accessibilityLabel={humanTime(remaining)}>{formatTime(remaining)}</Text>
+      <Text style={s.dim} testID="countdown" accessibilityLabel={allNight ? "playing all night" : humanTime(remaining)}>{allNight ? "all night" : formatTime(remaining)}</Text>
       <Text style={s.dim} testID="volume" accessibilityLabel={`volume ${Math.round(volume * 100)} percent`}>vol {volume.toFixed(2)}</Text>
       <View style={s.controls}>
         {onHome && (
