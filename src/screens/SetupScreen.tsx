@@ -4,6 +4,7 @@ import {
   loadState, saveState, addCustomFeed, removeCustomFeed, saveTimerMinutes,
 } from "../../vendor/player/src/lib/store";
 import { parseOpml, buildOpml } from "../platform/opml";
+import { formatTime } from "../../vendor/player/src/lib/engine";
 import { nextTrim } from "../logic/trim";
 import type { AppState } from "../../vendor/player/src/lib/store";
 import { youtubeFeedUrl, isYouTubeFeedUrl } from "../platform/youtube-url";
@@ -22,9 +23,13 @@ interface SetupProps {
   onResume?: () => void;
   resumeAvailable?: boolean;
   onOpenRest?: () => void;
+  // Set while a podcast night is playing but the listener has gone back home;
+  // renders a banner that taps back into the player. Playback is untouched.
+  nowPlaying?: { title: string; remaining: number };
+  onReturnToPlayer?: () => void;
 }
 
-export default function SetupScreen({ onStart, onResume, resumeAvailable, onOpenRest }: SetupProps) {
+export default function SetupScreen({ onStart, onResume, resumeAvailable, onOpenRest, nowPlaying, onReturnToPlayer }: SetupProps) {
   const [state, setState] = useState<AppState>(() => loadState());
   const [url, setUrl] = useState("");
   const [minutes, setMinutes] = useState(state.settings.timerMinutes);
@@ -99,6 +104,19 @@ export default function SetupScreen({ onStart, onResume, resumeAvailable, onOpen
 
   return (
     <ScrollView style={s.root} contentContainerStyle={s.body}>
+      {nowPlaying && (
+        <TouchableOpacity
+          testID="now-playing-banner"
+          style={s.banner}
+          onPress={onReturnToPlayer}
+          accessibilityRole="button"
+          accessibilityLabel={`return to now playing, ${nowPlaying.title}, ${formatTime(nowPlaying.remaining)} remaining`}
+        >
+          <Text style={s.bannerLabel}>♪ now playing</Text>
+          <Text style={s.bannerTitle} numberOfLines={1}>{nowPlaying.title}</Text>
+          <Text style={s.bannerTime}>{formatTime(nowPlaying.remaining)}  ›</Text>
+        </TouchableOpacity>
+      )}
       {showStepBack && (
         <View testID="stepback-offer" style={s.stepback}>
           <Text style={s.sbTitle}>you've been falling asleep quickly for a while.</Text>
@@ -230,6 +248,10 @@ export default function SetupScreen({ onStart, onResume, resumeAvailable, onOpen
 const s = StyleSheet.create({
   root: { flex: 1, backgroundColor: "#050508" },
   body: { padding: 24, gap: 12 },
+  banner: { alignSelf: "stretch", borderWidth: 1, borderColor: "#6f6a62", borderRadius: 12, backgroundColor: "#12100c", paddingHorizontal: 16, paddingVertical: 12, gap: 2 },
+  bannerLabel: { color: "#8a7a5c", fontSize: 11, textTransform: "uppercase" },
+  bannerTitle: { color: "#d9c9a8", fontSize: 15 },
+  bannerTime: { color: "#9a875f", fontSize: 13 },
   h: { color: "#9a875f", fontSize: 12, textTransform: "uppercase", marginTop: 12 },
   feedRowContainer: { flexDirection: "column", gap: 6 },
   feedRow: { flexDirection: "row", alignItems: "center", gap: 10 },
