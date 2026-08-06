@@ -350,3 +350,106 @@ test("RestSession.tick is driven every tick once playback is under way", () => {
     tickSpy.mockRestore();
   }
 });
+
+test("yt-nowplaying has accessibilityRole header", () => {
+  const stub = makeStub();
+  const createPlayer = makeCreatePlayer(stub);
+
+  let tree!: TestRenderer.ReactTestRenderer;
+  act(() => {
+    tree = TestRenderer.create(
+      <YouTubeNightScreen lineup={[epA]} minutes={10} trim={1} onEnd={jest.fn()} createPlayer={createPlayer} />,
+    );
+  });
+
+  const title = tree.root.findByProps({ testID: "yt-nowplaying" });
+  expect(title.props.accessibilityRole).toBe("header");
+
+  act(() => {
+    tree.unmount();
+  });
+});
+
+test("yt-stop has button role and stop label", () => {
+  const stub = makeStub();
+  const createPlayer = makeCreatePlayer(stub);
+
+  let tree!: TestRenderer.ReactTestRenderer;
+  act(() => {
+    tree = TestRenderer.create(
+      <YouTubeNightScreen lineup={[epA]} minutes={10} trim={1} onEnd={jest.fn()} createPlayer={createPlayer} />,
+    );
+  });
+
+  const stopBtn = tree.root.findByProps({ testID: "yt-stop" });
+  expect(stopBtn.props.accessibilityRole).toBe("button");
+  expect(stopBtn.props.accessibilityLabel).toBe("stop");
+
+  act(() => {
+    tree.unmount();
+  });
+});
+
+test("yt-begin has button role and start playback label when visible", () => {
+  // Use UNSTARTED state so yt-begin is visible
+  const stub = makeStub({ getPlayerState: jest.fn(() => -1) });
+  const createPlayer = makeCreatePlayer(stub);
+
+  let tree!: TestRenderer.ReactTestRenderer;
+  act(() => {
+    tree = TestRenderer.create(
+      <YouTubeNightScreen lineup={[epA]} minutes={10} trim={1} onEnd={jest.fn()} createPlayer={createPlayer} />,
+    );
+  });
+  advanceTicks(3);
+
+  const beginBtn = tree.root.findByProps({ testID: "yt-begin" });
+  expect(beginBtn.props.accessibilityRole).toBe("button");
+  expect(beginBtn.props.accessibilityLabel).toBe("start playback");
+
+  act(() => {
+    tree.unmount();
+  });
+});
+
+test("yt-countdown has humanized accessibilityLabel", () => {
+  const stub = makeStub();
+  const createPlayer = makeCreatePlayer(stub);
+
+  let tree!: TestRenderer.ReactTestRenderer;
+  act(() => {
+    tree = TestRenderer.create(
+      <YouTubeNightScreen lineup={[epA]} minutes={10} trim={1} onEnd={jest.fn()} createPlayer={createPlayer} />,
+    );
+  });
+  advanceTicks(1);
+
+  const countdown = tree.root.findByProps({ testID: "yt-countdown" });
+  expect(countdown.props.accessibilityLabel).toBeTruthy();
+  expect(countdown.props.accessibilityLabel).toMatch(/^\d+ minutes \d+ seconds remaining$/);
+
+  act(() => {
+    tree.unmount();
+  });
+});
+
+test("yt-volume has accessibilityLabel with percentage", () => {
+  const stub = makeStub();
+  const createPlayer = makeCreatePlayer(stub);
+
+  let tree!: TestRenderer.ReactTestRenderer;
+  act(() => {
+    tree = TestRenderer.create(
+      <YouTubeNightScreen lineup={[epA]} minutes={10} trim={1} onEnd={jest.fn()} createPlayer={createPlayer} />,
+    );
+  });
+  advanceTicks(1);
+
+  const volume = tree.root.findByProps({ testID: "yt-volume" });
+  expect(volume.props.accessibilityLabel).toBeTruthy();
+  expect(volume.props.accessibilityLabel).toMatch(/^volume \d+ percent$/);
+
+  act(() => {
+    tree.unmount();
+  });
+});

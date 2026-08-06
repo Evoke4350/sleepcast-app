@@ -350,12 +350,12 @@ export default function YouTubeNightScreen({
         <YouTubePlayer ref={playerRef} webViewProps={WEBVIEW_PROPS} />
       </View>
       <Text style={s.moon}>☾</Text>
-      <Text style={s.title} testID="yt-nowplaying" numberOfLines={2}>
+      <Text style={s.title} testID="yt-nowplaying" numberOfLines={2} accessibilityRole="header">
         {nowPlaying?.title ?? ""}
       </Text>
-      <Text style={s.dim} testID="yt-countdown">{formatTime(countdown)}</Text>
-      <Text style={s.dim} testID="yt-volume">vol {volFrac.toFixed(2)}</Text>
-      <TouchableOpacity style={s.btn} testID="yt-stop" onPress={handleStop}>
+      <Text style={s.dim} testID="yt-countdown" accessibilityLabel={`${Math.round(countdown / 60)} minutes ${Math.round(countdown % 60)} seconds remaining`}>{formatTime(countdown)}</Text>
+      <Text style={s.dim} testID="yt-volume" accessibilityLabel={`volume ${Math.round(volFrac * 100)} percent`}>vol {volFrac.toFixed(2)}</Text>
+      <TouchableOpacity style={s.btn} testID="yt-stop" onPress={handleStop} accessibilityRole="button" accessibilityLabel="stop">
         <Text style={s.btnT}>stop</Text>
       </TouchableOpacity>
       {/* Design-mandated: the screen-on limitation (see the module doc — a
@@ -363,7 +363,7 @@ export default function YouTubeNightScreen({
           change that) has to be said plainly here, not left implicit. */}
       <Text style={s.note} testID="yt-screen-note">screen stays on for YouTube</Text>
       {!started && (
-        <TouchableOpacity style={s.beginBtn} testID="yt-begin" onPress={handleBegin}>
+        <TouchableOpacity style={s.beginBtn} testID="yt-begin" onPress={handleBegin} accessibilityRole="button" accessibilityLabel="start playback">
           <Text style={s.beginT}>tap to begin</Text>
         </TouchableOpacity>
       )}
@@ -376,15 +376,15 @@ const s = StyleSheet.create({
   playerWrap: { width: "100%", aspectRatio: 16 / 9, borderRadius: 12, overflow: "hidden" },
   moon: { fontSize: 40, color: "#f0dcb8" },
   title: { color: "#c8c0b0", fontSize: 16, textAlign: "center" },
-  dim: { color: "#6e5d44", fontSize: 13 },
-  note: { color: "#4a4540", fontSize: 11 },
+  dim: { color: "#9a875f", fontSize: 13 },
+  note: { color: "#6f6a62", fontSize: 11 },
   btn: { borderWidth: 1, borderColor: "#3a3325", borderRadius: 999, paddingHorizontal: 20, paddingVertical: 10 },
   btnT: { color: "#d9c9a8", fontSize: 14 },
   beginBtn: {
     position: "absolute",
     top: "20%",
     borderWidth: 1,
-    borderColor: "#6e5d44",
+    borderColor: "#9a875f",
     borderRadius: 999,
     paddingHorizontal: 24,
     paddingVertical: 12,
