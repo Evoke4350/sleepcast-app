@@ -1,0 +1,10 @@
+First public F-Droid build.
+
+- Sleep-timer podcast player: 5, 45, 60 minutes, or all night
+- Gentle native volume fade before it stops
+- Per-feed volume leveling
+- Three ways to pick a night: shuffle, spread, or a varied mix
+- All-night mode auto-advances through the lineup
+- Leave the player and keep listening; a now-playing banner brings you back
+- Optional get-up nudge after a restless spell
+- Add feeds by URL or OPML import/export

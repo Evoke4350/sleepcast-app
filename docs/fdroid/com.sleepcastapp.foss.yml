@@ -1,0 +1,49 @@
+# Reference F-Droid build recipe for the `foss` flavor.
+#
+# This is NOT consumed by our repo — it belongs in the fdroiddata repo as
+# metadata/com.sleepcastapp.foss.yml. Kept here as a starting point for whoever
+# submits the app. Refine against `fdroid lint` / `fdroid build` before opening
+# a merge request against fdroiddata.
+#
+# React Native apps need node + the JS bundle produced during the Gradle build.
+# The `foss` variant's bundle task already runs Metro with SLEEPCAST_FOSS=1 (via
+# the env-wrapped nodeExecutableAndArgs in android/app/build.gradle), and the
+# build fails closed if the MiniLM model ever leaks into the bundle.
+
+Categories:
+  - Multimedia
+  - Internet
+License: MIT
+AuthorName: sleepcast contributors
+SourceCode: https://github.com/Evoke4350/sleepcast-app
+IssueTracker: https://github.com/Evoke4350/sleepcast-app/issues
+AutoName: sleepcast
+
+RepoType: git
+Repo: https://github.com/Evoke4350/sleepcast-app.git
+
+Builds:
+  - versionName: 1.0-foss
+    versionCode: 1
+    commit: v1.0-foss            # tag the release commit before submitting
+    subdir: android/app
+    submodules: true             # vendor/player is a git submodule
+    sudo:
+      - apt-get update
+      - apt-get install -y npm
+    init:
+      - npm ci
+    gradle:
+      - foss
+    # The foss flavor strips onnxruntime's prebuilt .so and swaps in the pure-JS
+    # embedder, so no non-free binary should reach the APK. If fdroid's scanner
+    # still flags the maven-pulled onnxruntime aar as a build-time dependency,
+    # exclude onnxruntime-react-native from the foss build graph entirely
+    # (react-native.config.js is global; a per-flavor gradle exclusion or a
+    # scanignore/prebuild step may be needed) — see the slice-8 spec's "Out".
+    output: build/outputs/apk/foss/release/app-foss-release.apk
+
+AutoUpdateMode: Version v%v
+UpdateCheckMode: Tags
+CurrentVersion: 1.0-foss
+CurrentVersionCode: 1
