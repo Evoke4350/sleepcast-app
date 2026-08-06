@@ -15,10 +15,10 @@ import { RestSession } from "./vendor/player/src/lib/rest/session";
 import { appendNight, loadQuietUntil } from "./vendor/player/src/lib/rest/ledger";
 import { isQuiet } from "./vendor/player/src/lib/rest/stepback";
 import { shouldSuggestGettingUp } from "./vendor/player/src/lib/rest/quarterhour";
-import { recordHeardPlay, saveLastNight, loadTimerMinutes, loadLastNight, loadState } from "./vendor/player/src/lib/store";
+import { recordHeardPlay, saveLastNight, loadTimerMinutes, loadLastNight, loadState, getPlays } from "./vendor/player/src/lib/store";
 import { HEARD_SEC } from "./vendor/player/src/lib/plays";
 import type { Episode } from "./vendor/player/src/lib/engine";
-import { isYouTubeLineup } from "./vendor/player/src/lib/youtube-night";
+import { isYouTubeLineup, nextPlayable } from "./vendor/player/src/lib/youtube-night";
 import SetupScreen from "./src/screens/SetupScreen";
 import PlayerScreen from "./src/screens/PlayerScreen";
 import RestScreen from "./src/screens/RestScreen";
@@ -276,6 +276,51 @@ export default function App() {
     }, 1000);
   }
 
+  // Switch the current episode mid-night without changing when the night
+  // ends. The night's fade/stop is fixed by endAtRef; skipping re-arms the
+  // native timer for the REMAINING time with the new feed's trim, so the night
+  // still fades and stops at the same wall-clock moment. Night-level state
+  // (endAtRef, restRef, quarterHourRef, the tick) is untouched — only the
+  // per-episode clock (startedAtRef), the current episode, and the trim change.
+  async function skipTo(ep: Episode) {
+    const cur = nowRef.current;
+    const end = endAtRef.current;
+    if (!cur || end === null || ep.id === cur.id) return;
+    const nowMs = Date.now();
+    // Count the outgoing episode the same way finishNight does, so a skipped-
+    // away episode still lands in the ledger and won't be re-offered.
+    const heardSec = Math.round((nowMs - startedAtRef.current) / 1000);
+    if (heardSec >= HEARD_SEC) {
+      recordHeardPlay({ id: cur.id, title: cur.title, feedId: cur.feedId, startedAt: startedAtRef.current, heardSec });
+    }
+    if (!playedIdsRef.current.includes(cur.id)) playedIdsRef.current = [...playedIdsRef.current, cur.id];
+
+    setNow(ep);
+    nowRef.current = ep;
+    startedAtRef.current = nowMs;
+    trimRef.current = loadState().settings.feedTrim[ep.feedId] ?? 1;
+    getNightAudio()?.setNowPlaying(ep.title, "sleepcast", "", 0);
+    await getNightAudio()?.play(ep.url, 0);
+    const remainingSec = Math.max(0, Math.round((end - nowMs) / 1000));
+    getNightAudio()?.scheduleFadeAndStop(ep.id, remainingSec, FADE_SECONDS, trimRef.current);
+    // Re-point the reconcile marker at the episode actually playing now, with
+    // its own (shortened) remaining window, so a mid-night kill reconciles it.
+    saveMarker({
+      episodeId: ep.id, startedAt: startedAtRef.current, timerMinutes: Math.round((end - nowMs) / 60_000),
+      lineup: lineupRef.current, playedIds: playedIdsRef.current,
+      feedTitles: feedTitlesRef.current, wasVaried: variedRef.current,
+    });
+  }
+
+  // The "next" control: advance to another pick in the lineup (prefers one
+  // other than the current, weighted away from recently-played), reusing the
+  // vendor selector. No "dead" set — podcast episodes don't get culled the way
+  // YouTube ones can.
+  function skipToNext() {
+    const nextEp = nextPlayable(lineupRef.current, new Set<string>(), nowRef.current?.id ?? null, getPlays());
+    if (nextEp) void skipTo(nextEp);
+  }
+
   async function onStart(strategy: Strategy, minutes: number) {
     if (!pool) return;
     const r = await chooseLineup(strategy, pool);
@@ -332,7 +377,11 @@ export default function App() {
             onEnd={() => setYtSession(null)}
           />
         ) : playing && now ? (
-          <PlayerScreen title={now.title} remaining={remaining} volume={volume} onStop={() => endSession()} onInteract={() => restRef.current?.noteInteraction()} />
+          <PlayerScreen
+            title={now.title} remaining={remaining} volume={volume}
+            lineup={lineupRef.current} currentId={now.id} feedTitles={feedTitlesRef.current}
+            onSelect={(ep) => skipTo(ep)} onNext={skipToNext}
+            onStop={() => endSession()} onInteract={() => restRef.current?.noteInteraction()} />
         ) : showRest ? (
           <RestScreen onClose={() => setShowRest(false)} />
         ) : (

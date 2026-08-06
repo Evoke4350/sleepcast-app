@@ -3,6 +3,9 @@ import { Text } from "react-native";
 import TestRenderer, { act } from "react-test-renderer";
 import PlayerScreen from "./PlayerScreen";
 
+const EP = (id: string, title: string, feedId = "f") => ({ id, title, url: `https://x/${id}.mp3`, feedId, date: "2024-01-01" });
+const LINEUP = [EP("a", "First Night"), EP("b", "Second Night", "g"), EP("c", "Third Night")] as any;
+
 test("renders title and countdown, fires onStop", () => {
   const onStop = jest.fn();
   let tree!: TestRenderer.ReactTestRenderer;
@@ -53,4 +56,54 @@ test("accessibility: moon is hidden, title is header, stop is button, countdown 
   const volume = tree.root.findByProps({ testID: "volume" });
   expect(volume.props.accessibilityLabel).toBeTruthy();
   expect(volume.props.accessibilityLabel).toMatch(/volume/);
+});
+
+test("a multi-episode lineup renders a labelled, tappable list plus a next button", () => {
+  const onSelect = jest.fn();
+  const onNext = jest.fn();
+  let tree!: TestRenderer.ReactTestRenderer;
+  act(() => {
+    tree = TestRenderer.create(
+      <PlayerScreen
+        title="First Night" remaining={90} volume={1} onStop={() => {}}
+        lineup={LINEUP} currentId="a" feedTitles={{ f: "Feed F", g: "Feed G" }}
+        onSelect={onSelect} onNext={onNext}
+      />
+    );
+  });
+  // one row per pick
+  const rows = tree.root.findAllByProps({ testID: "lineup-row-b" });
+  expect(rows.length).toBeGreaterThan(0);
+  const rowB = tree.root.findByProps({ testID: "lineup-row-b" });
+  expect(rowB.props.accessibilityRole).toBe("button");
+  expect(rowB.props.accessibilityLabel).toMatch(/Second Night/);
+  expect(rowB.props.accessibilityState.selected).toBe(false);
+  // current row marked selected
+  const rowA = tree.root.findByProps({ testID: "lineup-row-a" });
+  expect(rowA.props.accessibilityState.selected).toBe(true);
+  // tapping a non-current row jumps to it
+  act(() => { rowB.props.onPress(); });
+  expect(onSelect).toHaveBeenCalledWith(expect.objectContaining({ id: "b" }));
+  // next button
+  const next = tree.root.findByProps({ testID: "skip-next" });
+  expect(next.props.accessibilityLabel).toMatch(/next/i);
+  act(() => { next.props.onPress(); });
+  expect(onNext).toHaveBeenCalled();
+});
+
+test("a single-episode lineup (shuffle) renders no list or next", () => {
+  let tree!: TestRenderer.ReactTestRenderer;
+  act(() => {
+    tree = TestRenderer.create(
+      <PlayerScreen title="Solo" remaining={90} volume={1} onStop={() => {}} lineup={[EP("a", "Solo")] as any} currentId="a" />
+    );
+  });
+  expect(tree.root.findAllByProps({ testID: "skip-next" })).toHaveLength(0);
+  expect(tree.root.findAllByProps({ testID: "lineup-row-a" })).toHaveLength(0);
+});
+
+test("no lineup prop is backward compatible (no list, no crash)", () => {
+  let tree!: TestRenderer.ReactTestRenderer;
+  act(() => { tree = TestRenderer.create(<PlayerScreen title="A" remaining={90} volume={1} onStop={() => {}} />); });
+  expect(tree.root.findAllByProps({ testID: "skip-next" })).toHaveLength(0);
 });

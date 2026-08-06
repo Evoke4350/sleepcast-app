@@ -148,6 +148,73 @@ test("a feed with no trim defaults to 1", async () => {
   act(() => { tree.unmount(); });
 });
 
+// Slice 9: on a multi-episode (spread/varied) night the lineup is shown and
+// the listener can jump to any pick. A skip re-arms the native timer for the
+// REMAINING night with the new feed's trim — the night still ends on schedule.
+async function startSpreadNight() {
+  mockAudio = freshAudio();
+  mockPoolResult = {
+    pool: [
+      { id: "a", title: "A", url: "https://x/a.mp3", feedId: "f", date: "2024-01-01" },
+      { id: "b", title: "B", url: "https://x/b.mp3", feedId: "g", date: "2020-01-01" },
+      { id: "c", title: "C", url: "https://x/c.mp3", feedId: "h", date: "2018-01-01" },
+    ],
+    feedTitles: { f: "F", g: "G", h: "H" }, errors: [],
+  };
+  // give feed "g" a distinct trim so a skip to it is observable
+  const st = loadState();
+  saveState({ ...st, settings: { ...st.settings, feedTrim: { ...st.settings.feedTrim, g: 0.5 } } });
+  let tree!: TestRenderer.ReactTestRenderer;
+  await act(async () => { tree = TestRenderer.create(<App />); });
+  await act(async () => {});
+  await act(async () => { tree.root.findByProps({ testID: "timer-5" }).props.onPress(); });
+  await act(async () => { tree.root.findByProps({ testID: "start-spread" }).props.onPress(); });
+  return tree;
+}
+
+function lineupRows(tree: TestRenderer.ReactTestRenderer) {
+  // testID propagates to nested host instances, so dedupe by testID — DFS finds
+  // the outermost (the TouchableOpacity, which carries onPress/disabled) first.
+  const seen = new Map<string, any>();
+  tree.root
+    .findAll((n) => typeof n.props.testID === "string" && n.props.testID.startsWith("lineup-row-"))
+    .forEach((n) => { if (!seen.has(n.props.testID)) seen.set(n.props.testID, n); });
+  return [...seen.values()];
+}
+
+test("a spread night shows the lineup and skipping re-arms the timer for the remaining night", async () => {
+  const tree = await startSpreadNight();
+  // 3 picks listed
+  expect(lineupRows(tree).length).toBe(3);
+  // pick a row that is not the current (enabled) one
+  const target = lineupRows(tree).find((r) => r.props.disabled === false)!;
+  const targetId = (target.props.testID as string).replace("lineup-row-", "");
+  await act(async () => { target.props.onPress(); });
+  // native told to play the tapped episode's url and re-armed for it
+  expect(mockAudio.play).toHaveBeenCalledWith(`https://x/${targetId}.mp3`, 0);
+  const scheduleCalls = mockAudio.calls.filter((c: any[]) => c[0] === "schedule");
+  const last = scheduleCalls[scheduleCalls.length - 1];
+  expect(last[1]).toBe(targetId);           // episodeId
+  expect(last[2]).toBeLessThanOrEqual(300); // remaining ≤ the 5-min night
+  expect(last[2]).toBeGreaterThan(290);     // skipped almost immediately
+  expect(last[3]).toBe(60);                 // fade unchanged
+  if (targetId === "b") expect(last[4]).toBe(0.5); // feed g's trim traveled
+  // the now-playing title updated to the tapped episode
+  expect(tree.root.findByProps({ testID: "nowPlaying" }).props.children).toBe(targetId.toUpperCase());
+  act(() => { tree.unmount(); });
+});
+
+test("the next button advances to a different pick", async () => {
+  const tree = await startSpreadNight();
+  const before = tree.root.findByProps({ testID: "nowPlaying" }).props.children;
+  await act(async () => { tree.root.findByProps({ testID: "skip-next" }).props.onPress(); });
+  const after = tree.root.findByProps({ testID: "nowPlaying" }).props.children;
+  expect(after).not.toBe(before);
+  // a second play happened (lead + the advance)
+  expect(mockAudio.play.mock.calls.length).toBeGreaterThanOrEqual(2);
+  act(() => { tree.unmount(); });
+});
+
 // Regression for the stale-closure bug from slice 1: the bookkeeping used to
 // read the `now` STATE from a stale interval closure, so it silently never
 // ran on fade-to-zero. Now native fires onNightEnded and App's handler reads
