@@ -150,13 +150,50 @@ androidComponents {
 }
 
 // Ensure the foss variants' embedded JS bundle runs Metro with the FOSS swap, so
-// the packaged bundle uses the pure-JS embedder + YouTube stub. If RN 0.86's
-// bundle task type does not expose `environment`, this is a silent no-op and the
-// fallback (SLEEPCAST_FOSS=1 ./gradlew assembleFoss...) must be used instead.
+// the packaged bundle uses the pure-JS embedder + YouTube stub (no onnxruntime,
+// no 23 MB model). RN 0.86's BundleHermesCTask is a plain DefaultTask that shells
+// out via ExecOperations.exec inheriting the daemon env — it exposes no way to set
+// a per-task env directly. But it DOES expose `nodeExecutableAndArgs`, which is
+// prepended to the bundle command line. Wrapping it in `env SLEEPCAST_FOSS=1`
+// makes the command literally `env SLEEPCAST_FOSS=1 node cli.js bundle …`, so the
+// resolver swap fires WITHOUT needing a `SLEEPCAST_FOSS=1 ./gradlew` prefix.
+// `env` is present on every Linux/macOS build host (incl. F-Droid's).
 afterEvaluate {
-    tasks.matching { it.name =~ /^createBundleFoss.*JsAndAssets$/ }.configureEach {
-        if (it.hasProperty("environment")) {
-            it.environment("SLEEPCAST_FOSS", "1")
+    tasks.matching { it.name =~ /^createBundleFoss.*JsAndAssets$/ }.configureEach { t ->
+        def base = t.nodeExecutableAndArgs.getOrElse(["node"])
+        t.nodeExecutableAndArgs.set(["env", "SLEEPCAST_FOSS=1"] + base)
+        // Metro's --assets-dest never deletes orphaned assets, so an incremental
+        // rebuild after the swap changed would leave a stale model.onnx in the
+        // output and package it. Clear the bundle/asset output dirs first so each
+        // foss bundle reflects only the current (swapped) module graph.
+        t.doFirst {
+            t.jsBundleDir.get().asFile.deleteDir()
+            t.resourcesDir.get().asFile.deleteDir()
+        }
+    }
+}
+
+// Fail-closed guard: if the swap ever silently fails to apply, the foss embedded
+// bundle would pull in the full JS — dragging the 23 MB MiniLM model into the APK
+// (AGP renames it, e.g. res/yt.onnx, so a filename grep is not enough) and
+// referencing onnxruntime. Verify every packaged foss bundle asset dir and FAIL
+// the build if any onnxruntime .onnx model (a large .onnx) is present. Cheap
+// insurance against a forgotten env / a plugin change reopening the hole.
+afterEvaluate {
+    tasks.matching { it.name =~ /^createBundleFoss.*JsAndAssets$/ }.configureEach { t ->
+        t.doLast {
+            [t.jsBundleDir.get().asFile, t.resourcesDir.get().asFile].each { root ->
+                if (root.exists()) {
+                    root.eachFileRecurse { f ->
+                        if (f.isFile() && f.name.endsWith('.onnx') && f.length() > 1_000_000) {
+                            throw new GradleException(
+                                "FOSS build guard: a large .onnx model (${f.length()} bytes at ${f}) " +
+                                "was packaged by ${t.name} — the SLEEPCAST_FOSS resolver swap did NOT apply. " +
+                                "The foss APK must ship no ML model. Check metro-foss-resolve.js / the env wrapper.")
+                        }
+                    }
+                }
+            }
         }
     }
 }
