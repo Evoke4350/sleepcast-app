@@ -132,6 +132,12 @@ android {
             dimension "dist"
             applicationIdSuffix ".foss"
             versionNameSuffix "-foss"
+            // F-Droid signs releases with its own key, so the foss build must be
+            // UNSIGNED (the shared debug keystore on the release buildType would
+            // both fail F-Droid's reproducibility/signing rules and change the
+            // output name). Null here overrides the buildType signingConfig for
+            // every foss variant, yielding app-foss-release-unsigned.apk.
+            signingConfig null
         }
     }
 }
