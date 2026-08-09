@@ -34,7 +34,7 @@ Builds:
     # >=22.13). Provision a pinned Node tarball + checksum instead of apt.
     sudo:
       - curl -Lo node.tar.gz https://nodejs.org/dist/v22.23.2/node-v22.23.2-linux-x64.tar.gz
-      - echo "b294a556e639d64338823920e5866c21c02741742d2e1529ee1a225c1ec9252a  node.tar.gz" | sha256sum -c -
+      - test "$(sha256sum node.tar.gz | cut -c1-64)" = b294a556e639d64338823920e5866c21c02741742d2e1529ee1a225c1ec9252a
       - tar xzf node.tar.gz --strip-components=1 -C /usr/local/
     init:
       # subdir is android/app; go back to the JS project root for install.
@@ -68,7 +68,7 @@ Builds:
     # so this produces app-foss-release-unsigned.apk, then point output there.
     output: build/outputs/apk/foss/release/app-foss-release-unsigned.apk
 
-AutoUpdateMode: Version v%v
+AutoUpdateMode: Version
 UpdateCheckMode: Tags
 CurrentVersion: 1.0-foss
 CurrentVersionCode: 1
