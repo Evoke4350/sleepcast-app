@@ -12,6 +12,12 @@ react {
     // embeds a JS bundle instead of loading from Metro — breaking the dev loop.
     debuggableVariants = ["fullDebug", "fossDebug"]
 
+    // Run Hermes (and its bytecode compile via hermesc) ONLY for the full
+    // variants. The foss flavor ships JSC instead so the F-Droid build needs no
+    // prebuilt hermesc build-tool binary — the foss bundle stays plain JS and
+    // hermesc is never invoked. See the flavor-scoped engine deps below.
+    enableHermesOnlyInVariants = ["fullDebug", "fullRelease"]
+
     /* Folders */
     //   The root of your project, i.e. where "package.json" lives. Default is '../..'
     // root = file("../../")
@@ -214,11 +220,12 @@ dependencies {
     // The version of react-native is set by the React Native Gradle Plugin
     implementation("com.facebook.react:react-android")
 
-    if (hermesEnabled.toBoolean()) {
-        implementation("com.facebook.react:hermes-android")
-    } else {
-        implementation jscFlavor
-    }
+    // JS engine per flavor: full uses Hermes, foss uses JSC. Keeping these
+    // flavor-scoped (rather than the global hermesEnabled toggle) means the foss
+    // APK carries no libhermes.so and the foss build pulls no prebuilt hermesc.
+    // Both engines resolve from Maven Central, which F-Droid's scanner accepts.
+    fullImplementation("com.facebook.react:hermes-android")
+    fossImplementation(jscFlavor)
 
     testImplementation("junit:junit:4.13.2")
 }
