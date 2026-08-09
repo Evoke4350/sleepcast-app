@@ -14,8 +14,8 @@
 # live React Native recipe metadata/com.mattermost.rnbeta.yml.
 
 Categories:
-  - Multimedia
-  - Internet
+  - Podcast
+  - Online Media Player
 License: MIT
 AuthorName: sleepcast contributors
 SourceCode: https://github.com/Evoke4350/sleepcast-app
@@ -68,7 +68,6 @@ Builds:
     # so this produces app-foss-release-unsigned.apk, then point output there.
     output: build/outputs/apk/foss/release/app-foss-release-unsigned.apk
 
-AntiFeatures: []          # none expected; F-Droid assigns any during review
 AutoUpdateMode: Version v%v
 UpdateCheckMode: Tags
 CurrentVersion: 1.0-foss
