@@ -102,6 +102,26 @@ test("adding a YouTube video URL shows a feed error instead of adding a feed", a
   expect(find(tree, "feed-error").props.children).toContain("video");
 });
 
+test("toggling a feed notifies the parent so the episode pool can rebuild", () => {
+  // Regression: the pool was built once at App mount and never rebuilt when the
+  // user enabled another feed, so only the launch-default feed (Sleep With Me)
+  // ever appeared in the mix. SetupScreen must signal feed-set changes upward.
+  const onFeedsChanged = jest.fn();
+  let tree!: TestRenderer.ReactTestRenderer;
+  act(() => { tree = TestRenderer.create(<SetupScreen onStart={() => {}} onFeedsChanged={onFeedsChanged} />); });
+  act(() => { find(tree, "feed-toggle-swm").props.onValueChange(false); });
+  expect(onFeedsChanged).toHaveBeenCalled();
+});
+
+test("adding a feed also notifies the parent to rebuild the pool", () => {
+  const onFeedsChanged = jest.fn();
+  let tree!: TestRenderer.ReactTestRenderer;
+  act(() => { tree = TestRenderer.create(<SetupScreen onStart={() => {}} onFeedsChanged={onFeedsChanged} />); });
+  act(() => { find(tree, "add-feed-input").props.onChangeText("https://feeds.example/rebuild"); });
+  act(() => { find(tree, "add-feed").props.onPress(); });
+  expect(onFeedsChanged).toHaveBeenCalled();
+});
+
 test("start-varied invokes onStart with the selected timer", () => {
   const onStart = jest.fn();
   let tree!: TestRenderer.ReactTestRenderer;

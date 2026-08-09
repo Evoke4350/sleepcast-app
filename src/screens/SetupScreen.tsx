@@ -38,9 +38,13 @@ interface SetupProps {
   // `allNight` shows "all night" instead of a countdown.
   nowPlaying?: { title: string; remaining: number; allNight?: boolean };
   onReturnToPlayer?: () => void;
+  // Fired whenever the enabled feed set changes (toggle/add/remove). App rebuilds
+  // the episode pool in response — it is built once at mount, so without this the
+  // pool would keep only the feeds that were enabled at launch.
+  onFeedsChanged?: () => void;
 }
 
-export default function SetupScreen({ onStart, onResume, resumeAvailable, onOpenRest, nowPlaying, onReturnToPlayer }: SetupProps) {
+export default function SetupScreen({ onStart, onResume, resumeAvailable, onOpenRest, nowPlaying, onReturnToPlayer, onFeedsChanged }: SetupProps) {
   const [state, setState] = useState<AppState>(() => loadState());
   const [url, setUrl] = useState("");
   // All-night persists via its own flag: the vendor saveTimerMinutes clamps to a
@@ -67,6 +71,7 @@ export default function SetupScreen({ onStart, onResume, resumeAvailable, onOpen
 
   function toggleFeed(id: string, enabled: boolean) {
     persist({ ...state, feeds: state.feeds.map((f) => (f.id === id ? { ...f, enabled } : f)) });
+    onFeedsChanged?.();
   }
   async function addFeed() {
     const trimmed = url.trim();
@@ -82,12 +87,12 @@ export default function SetupScreen({ onStart, onResume, resumeAvailable, onOpen
         setFeedError(resolved.reason === "video" ? "that's a video, not a channel" : "couldn't find that channel");
         return;
       }
-      try { persist(addCustomFeed(state, resolved.feedUrl, undefined)); setUrl(""); } catch { /* invalid url: leave text for correction */ }
+      try { persist(addCustomFeed(state, resolved.feedUrl, undefined)); setUrl(""); onFeedsChanged?.(); } catch { /* invalid url: leave text for correction */ }
       return;
     }
-    try { persist(addCustomFeed(state, trimmed)); setUrl(""); } catch { /* invalid url: leave text for correction */ }
+    try { persist(addCustomFeed(state, trimmed)); setUrl(""); onFeedsChanged?.(); } catch { /* invalid url: leave text for correction */ }
   }
-  function removeFeed(id: string) { persist(removeCustomFeed(state, id)); }
+  function removeFeed(id: string) { persist(removeCustomFeed(state, id)); onFeedsChanged?.(); }
   function stepTrim(id: string, dir: 1 | -1) {
     const cur = state.settings.feedTrim[id] ?? 1;
     const next = nextTrim(cur, dir);
