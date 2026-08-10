@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { ActivityIndicator, AppState, StatusBar, StyleSheet, Text, View } from "react-native";
 // Not react-native's SafeAreaView, which is deprecated in 0.86 and warns on
 // every render. react-native-safe-area-context was already a dependency here;
@@ -133,16 +133,30 @@ export default function App() {
     return () => sub.remove();
   }, []);
 
-  useEffect(() => {
-    buildPool(nativeFetch)
+  // The pool is (re)built from the currently enabled feeds. It must be rebuilt
+  // whenever the user changes which feeds are enabled — not only at mount —
+  // otherwise enabling a second feed never reaches the mix (SetupScreen calls
+  // this via onFeedsChanged).
+  const refreshPool = useCallback((initial = false) => {
+    return buildPool(nativeFetch)
       .then(({ pool: builtPool, feedTitles, errors }) => {
-        if (!builtPool.length) throw new Error(errors[0] ?? "no episodes");
+        if (!builtPool.length) {
+          // First load with no episodes is a real error to surface; a later
+          // refresh keeps the working pool rather than blanking a running app.
+          if (initial) throw new Error(errors[0] ?? "no episodes");
+          return;
+        }
         feedTitlesRef.current = feedTitles;
         setPool(builtPool);
+        setError(null);
       })
-      .catch((e) => setError(String(e?.message ?? e)));
-    return () => stopTick();
+      .catch((e) => { if (initial) setError(String(e?.message ?? e)); });
   }, []);
+
+  useEffect(() => {
+    refreshPool(true);
+    return () => stopTick();
+  }, [refreshPool]);
 
   // Native is authoritative now: it runs the fade/stop timer even while JS is
   // suspended (screen locked), then tells us it happened. This is where the
@@ -504,7 +518,8 @@ export default function App() {
             resumeAvailable={!!resumeNight(loadTimerMinutes()) && !isQuiet(loadQuietUntil(), Date.now())}
             onOpenRest={() => setShowRest(true)}
             nowPlaying={playing && now ? { title: now.title, remaining, allNight } : undefined}
-            onReturnToPlayer={() => setAtHome(false)} />
+            onReturnToPlayer={() => setAtHome(false)}
+            onFeedsChanged={() => refreshPool()} />
         )}
       </SafeAreaView>
     </SafeAreaProvider>
