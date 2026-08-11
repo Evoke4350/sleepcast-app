@@ -10,7 +10,7 @@
 
 ## Global Constraints
 
-- **iOS-only divergence.** Android/foss must render identically to today — the Android token branch equals the current literal values, verified by test. (Protects the in-review F-Droid build.)
+- **iOS-only divergence — per-screen branch.** Each screen selects its stylesheet by platform: `const s = t.ios ? iosStyles : androidStyles`, where **`androidStyles` is a verbatim copy of that screen's current `StyleSheet.create` block** (byte-identical → Android/foss frozen, protecting the in-review F-Droid build) and **`iosStyles` is the tokenized/polished version** (free to diverge; not shackled to Android's pixel values). The per-screen "tokenized StyleSheet" shown in Tasks 2–4 is the **iOS branch**. Get the exact current styles from `git show <pre-task-commit>:src/screens/<Screen>.tsx`.
 - **No new dependencies. No bundled fonts. No native changes.** SF system font only.
 - **No behavior changes.** Presentation only; all 151 existing tests stay green; `tsc --noEmit` + eslint clean.
 - **No background/gradient library.** Ground is solid `#050508`; depth comes from surfaces + shadow.
