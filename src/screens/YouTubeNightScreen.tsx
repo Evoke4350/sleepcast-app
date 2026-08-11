@@ -356,7 +356,7 @@ export default function YouTubeNightScreen({
       </Text>
       <Text style={s.dim} testID="yt-countdown" accessibilityLabel={`${Math.floor(countdown / 60)} minutes ${Math.round(countdown % 60)} seconds remaining`}>{formatTime(countdown)}</Text>
       <Text style={s.dim} testID="yt-volume" accessibilityLabel={`volume ${Math.round(volFrac * 100)} percent`}>vol {volFrac.toFixed(2)}</Text>
-      <TouchableOpacity style={s.btn} testID="yt-stop" onPress={handleStop} accessibilityRole="button" accessibilityLabel="stop">
+      <TouchableOpacity style={s.btn} testID="yt-stop" activeOpacity={t.ios ? 0.6 : 0.2} onPress={handleStop} accessibilityRole="button" accessibilityLabel="stop">
         <Text style={s.btnT}>stop</Text>
       </TouchableOpacity>
       {/* Design-mandated: the screen-on limitation (see the module doc — a
@@ -364,7 +364,7 @@ export default function YouTubeNightScreen({
           change that) has to be said plainly here, not left implicit. */}
       <Text style={s.note} testID="yt-screen-note">screen stays on for YouTube</Text>
       {!started && (
-        <TouchableOpacity style={s.beginBtn} testID="yt-begin" onPress={handleBegin} accessibilityRole="button" accessibilityLabel="start playback">
+        <TouchableOpacity style={s.beginBtn} testID="yt-begin" activeOpacity={t.ios ? 0.6 : 0.2} onPress={handleBegin} accessibilityRole="button" accessibilityLabel="start playback">
           <Text style={s.beginT}>tap to begin</Text>
         </TouchableOpacity>
       )}

@@ -138,6 +138,7 @@ export default function SetupScreen({ onStart, onResume, resumeAvailable, onOpen
         <TouchableOpacity
           testID="now-playing-banner"
           style={s.banner}
+          activeOpacity={t.ios ? 0.6 : 0.2}
           onPress={onReturnToPlayer}
           accessibilityRole="button"
           accessibilityLabel={`return to now playing, ${nowPlaying.title}, ${nowPlaying.allNight ? "all night" : `${formatTime(nowPlaying.remaining)} remaining`}`}
@@ -152,8 +153,8 @@ export default function SetupScreen({ onStart, onResume, resumeAvailable, onOpen
           <Text style={s.sbTitle}>you've been falling asleep quickly for a while.</Text>
           <Text style={s.sbBody}>you might not need us right now — we can stop nudging and stay out of the way for a month.</Text>
           <View style={s.row}>
-            <TouchableOpacity testID="stepback-accept" accessibilityRole="button" accessibilityLabel="go quiet" style={s.btn} onPress={acceptStepBack}><Text style={s.btnT}>go quiet</Text></TouchableOpacity>
-            <TouchableOpacity testID="stepback-decline" accessibilityRole="button" accessibilityLabel="not now" style={s.btn} onPress={declineStepBack}><Text style={s.btnT}>not now</Text></TouchableOpacity>
+            <TouchableOpacity testID="stepback-accept" accessibilityRole="button" accessibilityLabel="go quiet" style={s.btn} activeOpacity={t.ios ? 0.6 : 0.2} onPress={acceptStepBack}><Text style={s.btnT}>go quiet</Text></TouchableOpacity>
+            <TouchableOpacity testID="stepback-decline" accessibilityRole="button" accessibilityLabel="not now" style={s.btn} activeOpacity={t.ios ? 0.6 : 0.2} onPress={declineStepBack}><Text style={s.btnT}>not now</Text></TouchableOpacity>
           </View>
         </View>
       )}
@@ -173,6 +174,7 @@ export default function SetupScreen({ onStart, onResume, resumeAvailable, onOpen
                 testID={`feed-remove-${f.id}`}
                 accessibilityRole="button"
                 accessibilityLabel={`remove ${f.title}`}
+                activeOpacity={t.ios ? 0.6 : 0.2}
                 onPress={() => removeFeed(f.id)}
               >
                 <Text style={s.remove}>✕</Text>
@@ -184,6 +186,7 @@ export default function SetupScreen({ onStart, onResume, resumeAvailable, onOpen
               testID={`trim-down-${f.id}`}
               accessibilityRole="button"
               accessibilityLabel={`quieter — ${f.title}`}
+              activeOpacity={t.ios ? 0.6 : 0.2}
               onPress={() => stepTrim(f.id, -1)}
               style={s.trimBtn}
             ><Text style={s.trimBtnT}>−</Text></TouchableOpacity>
@@ -201,6 +204,7 @@ export default function SetupScreen({ onStart, onResume, resumeAvailable, onOpen
               testID={`trim-up-${f.id}`}
               accessibilityRole="button"
               accessibilityLabel={`louder — ${f.title}`}
+              activeOpacity={t.ios ? 0.6 : 0.2}
               onPress={() => stepTrim(f.id, 1)}
               style={s.trimBtn}
             ><Text style={s.trimBtnT}>+</Text></TouchableOpacity>
@@ -213,14 +217,14 @@ export default function SetupScreen({ onStart, onResume, resumeAvailable, onOpen
           accessibilityLabel="feed URL"
           placeholderTextColor="#4a4436" autoCapitalize="none" value={url} onChangeText={setUrl}
         />
-        <TouchableOpacity testID="add-feed" accessibilityRole="button" accessibilityLabel="add feed" style={s.btn} onPress={addFeed}><Text style={s.btnT}>add</Text></TouchableOpacity>
+        <TouchableOpacity testID="add-feed" accessibilityRole="button" accessibilityLabel="add feed" style={s.btn} activeOpacity={t.ios ? 0.6 : 0.2} onPress={addFeed}><Text style={s.btnT}>add</Text></TouchableOpacity>
       </View>
       {feedError && (
         <Text testID="feed-error" style={s.feedError} accessibilityRole="alert" accessibilityLiveRegion="polite">{feedError}</Text>
       )}
       <View style={s.addRow}>
-        <TouchableOpacity testID="opml-import" accessibilityRole="button" accessibilityLabel="import OPML file" style={s.btn} onPress={() => importOpml("")}><Text style={s.btnT}>import OPML</Text></TouchableOpacity>
-        <TouchableOpacity testID="opml-export" accessibilityRole="button" accessibilityLabel="export OPML file" style={s.btn} onPress={exportOpml}><Text style={s.btnT}>export OPML</Text></TouchableOpacity>
+        <TouchableOpacity testID="opml-import" accessibilityRole="button" accessibilityLabel="import OPML file" style={s.btn} activeOpacity={t.ios ? 0.6 : 0.2} onPress={() => importOpml("")}><Text style={s.btnT}>import OPML</Text></TouchableOpacity>
+        <TouchableOpacity testID="opml-export" accessibilityRole="button" accessibilityLabel="export OPML file" style={s.btn} activeOpacity={t.ios ? 0.6 : 0.2} onPress={exportOpml}><Text style={s.btnT}>export OPML</Text></TouchableOpacity>
       </View>
 
       <Text style={s.h}>timer</Text>
@@ -235,6 +239,7 @@ export default function SetupScreen({ onStart, onResume, resumeAvailable, onOpen
               accessibilityLabel={all ? "all night timer, plays until you stop" : `${m} minute timer`}
               accessibilityState={{ selected: minutes === m }}
               style={[s.chip, minutes === m && s.chipOn]}
+              activeOpacity={t.ios ? 0.6 : 0.2}
               onPress={() => pickTimer(m)}
             >
               <Text style={s.btnT}>{all ? "all night" : `${m}m`}</Text>
@@ -261,16 +266,16 @@ export default function SetupScreen({ onStart, onResume, resumeAvailable, onOpen
         </Text>
       )}
       <View style={s.row}>
-        <TouchableOpacity testID="start-shuffle" accessibilityRole="button" accessibilityLabel="start — shuffle" disabled={mixed} style={s.btn} onPress={() => startIfNotMixed("shuffle", minutes)}><Text style={s.btnT}>shuffle</Text></TouchableOpacity>
-        <TouchableOpacity testID="start-spread" accessibilityRole="button" accessibilityLabel="start — spread" disabled={mixed} style={s.btn} onPress={() => startIfNotMixed("spread", minutes)}><Text style={s.btnT}>spread</Text></TouchableOpacity>
-        <TouchableOpacity testID="start-varied" accessibilityRole="button" accessibilityLabel="start — varied" disabled={mixed} style={s.btn} onPress={() => startIfNotMixed("varied", minutes)}><Text style={s.btnT}>varied</Text></TouchableOpacity>
+        <TouchableOpacity testID="start-shuffle" accessibilityRole="button" accessibilityLabel="start — shuffle" disabled={mixed} style={s.btn} activeOpacity={t.ios ? 0.6 : 0.2} onPress={() => startIfNotMixed("shuffle", minutes)}><Text style={s.btnT}>shuffle</Text></TouchableOpacity>
+        <TouchableOpacity testID="start-spread" accessibilityRole="button" accessibilityLabel="start — spread" disabled={mixed} style={s.btn} activeOpacity={t.ios ? 0.6 : 0.2} onPress={() => startIfNotMixed("spread", minutes)}><Text style={s.btnT}>spread</Text></TouchableOpacity>
+        <TouchableOpacity testID="start-varied" accessibilityRole="button" accessibilityLabel="start — varied" disabled={mixed} style={s.btn} activeOpacity={t.ios ? 0.6 : 0.2} onPress={() => startIfNotMixed("varied", minutes)}><Text style={s.btnT}>varied</Text></TouchableOpacity>
       </View>
       {resumeAvailable && (
-        <TouchableOpacity testID="start-resume" accessibilityRole="button" accessibilityLabel="resume last night" style={s.btn} onPress={onResume}><Text style={s.btnT}>resume last night</Text></TouchableOpacity>
+        <TouchableOpacity testID="start-resume" accessibilityRole="button" accessibilityLabel="resume last night" style={s.btn} activeOpacity={t.ios ? 0.6 : 0.2} onPress={onResume}><Text style={s.btnT}>resume last night</Text></TouchableOpacity>
       )}
 
       {onOpenRest && (
-        <TouchableOpacity testID="open-rest" accessibilityRole="link" accessibilityLabel="sleep history" onPress={onOpenRest} style={s.nightsLink}>
+        <TouchableOpacity testID="open-rest" accessibilityRole="link" accessibilityLabel="sleep history" activeOpacity={t.ios ? 0.6 : 0.2} onPress={onOpenRest} style={s.nightsLink}>
           <Text style={s.nightsText}>nights ›</Text>
         </TouchableOpacity>
       )}

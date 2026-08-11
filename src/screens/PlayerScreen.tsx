@@ -49,16 +49,16 @@ export default function PlayerScreen({
       <Text style={s.dim} testID="volume" accessibilityLabel={`volume ${Math.round(volume * 100)} percent`}>vol {volume.toFixed(2)}</Text>
       <View style={s.controls}>
         {onHome && (
-          <TouchableOpacity style={s.btn} testID="home" accessibilityRole="button" accessibilityLabel="back to home, keep playing" onPress={onHome}>
+          <TouchableOpacity style={s.btn} testID="home" accessibilityRole="button" accessibilityLabel="back to home, keep playing" activeOpacity={t.ios ? 0.6 : 0.2} onPress={onHome}>
             <Text style={s.btnT}>home</Text>
           </TouchableOpacity>
         )}
         {showList && (
-          <TouchableOpacity style={s.btn} testID="skip-next" accessibilityRole="button" accessibilityLabel="next episode" onPress={onNext}>
+          <TouchableOpacity style={s.btn} testID="skip-next" accessibilityRole="button" accessibilityLabel="next episode" activeOpacity={t.ios ? 0.6 : 0.2} onPress={onNext}>
             <Text style={s.btnT}>next</Text>
           </TouchableOpacity>
         )}
-        <TouchableOpacity style={s.btn} testID="stop" onPress={onStop} accessibilityRole="button" accessibilityLabel="stop"><Text style={s.btnT}>stop</Text></TouchableOpacity>
+        <TouchableOpacity style={s.btn} testID="stop" activeOpacity={t.ios ? 0.6 : 0.2} onPress={onStop} accessibilityRole="button" accessibilityLabel="stop"><Text style={s.btnT}>stop</Text></TouchableOpacity>
       </View>
 
       {showList && (
@@ -72,6 +72,7 @@ export default function PlayerScreen({
                 testID={`lineup-row-${ep.id}`}
                 style={[s.row, selected && s.rowCurrent]}
                 disabled={selected}
+                activeOpacity={t.ios ? 0.6 : 0.2}
                 onPress={() => onSelect?.(ep)}
                 accessibilityRole="button"
                 accessibilityState={{ selected }}

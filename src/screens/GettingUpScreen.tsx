@@ -10,7 +10,7 @@ export default function GettingUpScreen({ onDismiss }: { onDismiss: () => void }
         the bed works best when it's just for sleep. try getting up for a few
         minutes — a glass of water, a dim room — and come back when you're heavy.
       </Text>
-      <TouchableOpacity style={s.btn} testID="gettingup-dismiss" onPress={onDismiss} accessibilityRole="button" accessibilityLabel="ok">
+      <TouchableOpacity style={s.btn} testID="gettingup-dismiss" activeOpacity={t.ios ? 0.6 : 0.2} onPress={onDismiss} accessibilityRole="button" accessibilityLabel="ok">
         <Text style={s.btnT}>ok</Text>
       </TouchableOpacity>
     </View>

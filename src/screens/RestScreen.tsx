@@ -70,13 +70,13 @@ export default function RestScreen({ onClose }: { onClose: () => void }) {
         <View style={s.section}>
           <Text style={s.prompt}>did you fall asleep to it last time?</Text>
           <View style={s.row}>
-            <TouchableOpacity testID="rest-label-yes" style={s.btn} onPress={() => label("slept")} accessibilityRole="button" accessibilityLabel="yes, I fell asleep to it"><Text style={s.btnT}>yes</Text></TouchableOpacity>
-            <TouchableOpacity testID="rest-label-no" style={s.btn} onPress={() => label("awake")} accessibilityRole="button" accessibilityLabel="no, I stayed awake"><Text style={s.btnT}>no</Text></TouchableOpacity>
+            <TouchableOpacity testID="rest-label-yes" style={s.btn} activeOpacity={t.ios ? 0.6 : 0.2} onPress={() => label("slept")} accessibilityRole="button" accessibilityLabel="yes, I fell asleep to it"><Text style={s.btnT}>yes</Text></TouchableOpacity>
+            <TouchableOpacity testID="rest-label-no" style={s.btn} activeOpacity={t.ios ? 0.6 : 0.2} onPress={() => label("awake")} accessibilityRole="button" accessibilityLabel="no, I stayed awake"><Text style={s.btnT}>no</Text></TouchableOpacity>
           </View>
         </View>
       )}
       <Text style={s.note}>counted only on this device. nothing sent anywhere.</Text>
-      <TouchableOpacity testID="rest-back" onPress={onClose} accessibilityRole="button" accessibilityLabel="back"><Text style={s.back}>back</Text></TouchableOpacity>
+      <TouchableOpacity testID="rest-back" activeOpacity={t.ios ? 0.6 : 0.2} onPress={onClose} accessibilityRole="button" accessibilityLabel="back"><Text style={s.back}>back</Text></TouchableOpacity>
     </ScrollView>
   );
 }
