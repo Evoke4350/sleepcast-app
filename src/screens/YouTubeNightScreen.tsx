@@ -34,6 +34,7 @@ import {
 } from "../../vendor/player/src/lib/youtube-media";
 import { transportFor, shouldGiveUp, decideAfterError, nextPlayable } from "../../vendor/player/src/lib/youtube-night";
 import YouTubePlayer, { type YouTubePlayerHandle } from "../youtube/YouTubePlayer";
+import t from "../theme/tokens";
 
 const FADE_SECONDS = 60;
 const TICK_MS = 1000;
@@ -355,7 +356,7 @@ export default function YouTubeNightScreen({
       </Text>
       <Text style={s.dim} testID="yt-countdown" accessibilityLabel={`${Math.floor(countdown / 60)} minutes ${Math.round(countdown % 60)} seconds remaining`}>{formatTime(countdown)}</Text>
       <Text style={s.dim} testID="yt-volume" accessibilityLabel={`volume ${Math.round(volFrac * 100)} percent`}>vol {volFrac.toFixed(2)}</Text>
-      <TouchableOpacity style={s.btn} testID="yt-stop" onPress={handleStop} accessibilityRole="button" accessibilityLabel="stop">
+      <TouchableOpacity style={s.btn} testID="yt-stop" activeOpacity={t.ios ? 0.6 : 0.2} onPress={handleStop} accessibilityRole="button" accessibilityLabel="stop">
         <Text style={s.btnT}>stop</Text>
       </TouchableOpacity>
       {/* Design-mandated: the screen-on limitation (see the module doc — a
@@ -363,7 +364,7 @@ export default function YouTubeNightScreen({
           change that) has to be said plainly here, not left implicit. */}
       <Text style={s.note} testID="yt-screen-note">screen stays on for YouTube</Text>
       {!started && (
-        <TouchableOpacity style={s.beginBtn} testID="yt-begin" onPress={handleBegin} accessibilityRole="button" accessibilityLabel="start playback">
+        <TouchableOpacity style={s.beginBtn} testID="yt-begin" activeOpacity={t.ios ? 0.6 : 0.2} onPress={handleBegin} accessibilityRole="button" accessibilityLabel="start playback">
           <Text style={s.beginT}>tap to begin</Text>
         </TouchableOpacity>
       )}
@@ -371,7 +372,7 @@ export default function YouTubeNightScreen({
   );
 }
 
-const s = StyleSheet.create({
+const androidStyles = StyleSheet.create({
   body: { flex: 1, alignItems: "center", justifyContent: "center", gap: 18, padding: 24 },
   playerWrap: { width: "100%", aspectRatio: 16 / 9, borderRadius: 12, overflow: "hidden" },
   moon: { fontSize: 40, color: "#f0dcb8" },
@@ -392,3 +393,30 @@ const s = StyleSheet.create({
   },
   beginT: { color: "#f0dcb8", fontSize: 14 },
 });
+
+const iosStyles = StyleSheet.create({
+  body: { flex: 1, alignItems: "center", justifyContent: "center", gap: t.space(4.5), padding: t.space(6) },
+  playerWrap: { width: "100%", aspectRatio: 16 / 9, borderRadius: t.radius.sm, overflow: "hidden" },
+  moon: { fontSize: 40, color: t.color.textPrimary },
+  title: { color: t.color.textSecondary, ...t.type.heading, textAlign: "center" },
+  dim: { color: t.color.label, ...t.type.label, ...t.tabular },
+  note: { color: t.color.textMuted, fontSize: 11 },
+  btn: { borderWidth: 1, borderColor: t.color.hairline, borderRadius: t.radius.pill, paddingHorizontal: t.space(5), paddingVertical: t.space(2.5), minHeight: 44, alignItems: "center", justifyContent: "center" },
+  btnT: { color: t.color.textPrimary, ...t.type.bodySm },
+  beginBtn: {
+    position: "absolute",
+    top: "20%",
+    borderWidth: 1,
+    borderColor: t.color.label,
+    borderRadius: t.radius.pill,
+    paddingHorizontal: t.space(6),
+    paddingVertical: t.space(3),
+    backgroundColor: t.color.ground,
+    minHeight: 44,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  beginT: { color: t.color.textPrimary, ...t.type.bodySm },
+});
+
+const s = t.ios ? iosStyles : androidStyles;
