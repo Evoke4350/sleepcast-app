@@ -34,6 +34,7 @@ import {
 } from "../../vendor/player/src/lib/youtube-media";
 import { transportFor, shouldGiveUp, decideAfterError, nextPlayable } from "../../vendor/player/src/lib/youtube-night";
 import YouTubePlayer, { type YouTubePlayerHandle } from "../youtube/YouTubePlayer";
+import t from "../theme/tokens";
 
 const FADE_SECONDS = 60;
 const TICK_MS = 1000;
@@ -371,7 +372,7 @@ export default function YouTubeNightScreen({
   );
 }
 
-const s = StyleSheet.create({
+const androidStyles = StyleSheet.create({
   body: { flex: 1, alignItems: "center", justifyContent: "center", gap: 18, padding: 24 },
   playerWrap: { width: "100%", aspectRatio: 16 / 9, borderRadius: 12, overflow: "hidden" },
   moon: { fontSize: 40, color: "#f0dcb8" },
@@ -392,3 +393,30 @@ const s = StyleSheet.create({
   },
   beginT: { color: "#f0dcb8", fontSize: 14 },
 });
+
+const iosStyles = StyleSheet.create({
+  body: { flex: 1, alignItems: "center", justifyContent: "center", gap: t.space(4.5), padding: t.space(6) },
+  playerWrap: { width: "100%", aspectRatio: 16 / 9, borderRadius: t.radius.sm, overflow: "hidden" },
+  moon: { fontSize: 40, color: t.color.textPrimary },
+  title: { color: t.color.textSecondary, ...t.type.heading, textAlign: "center" },
+  dim: { color: t.color.label, ...t.type.label, ...t.tabular },
+  note: { color: t.color.textMuted, fontSize: 11 },
+  btn: { borderWidth: 1, borderColor: t.color.hairline, borderRadius: t.radius.pill, paddingHorizontal: t.space(5), paddingVertical: t.space(2.5), minHeight: 44, alignItems: "center", justifyContent: "center" },
+  btnT: { color: t.color.textPrimary, ...t.type.bodySm },
+  beginBtn: {
+    position: "absolute",
+    top: "20%",
+    borderWidth: 1,
+    borderColor: t.color.label,
+    borderRadius: t.radius.pill,
+    paddingHorizontal: t.space(6),
+    paddingVertical: t.space(3),
+    backgroundColor: t.color.ground,
+    minHeight: 44,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  beginT: { color: t.color.textPrimary, ...t.type.bodySm },
+});
+
+const s = t.ios ? iosStyles : androidStyles;

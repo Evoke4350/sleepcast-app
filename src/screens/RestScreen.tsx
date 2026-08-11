@@ -5,6 +5,7 @@ import { tightenAfterFalsePositive, paramsFromHistory } from "../../vendor/playe
 import { fmtDuration, lastNight } from "../../vendor/player/src/lib/rest/surface";
 import { getPlays } from "../../vendor/player/src/lib/store";
 import { playsSince, playAtMoment } from "../../vendor/player/src/lib/plays";
+import t from "../theme/tokens";
 
 export default function RestScreen({ onClose }: { onClose: () => void }) {
   const nights = useMemo(() => loadNights(), []);
@@ -80,7 +81,7 @@ export default function RestScreen({ onClose }: { onClose: () => void }) {
   );
 }
 
-const s = StyleSheet.create({
+const androidStyles = StyleSheet.create({
   root: { flex: 1, backgroundColor: "#050508" },
   body: { padding: 24, gap: 28, alignItems: "center" },
   stat: { alignItems: "center", gap: 4 },
@@ -99,3 +100,25 @@ const s = StyleSheet.create({
   note: { color: "#6f6a62", fontSize: 11, textAlign: "center" },
   back: { color: "#8a7a5c", fontSize: 12, textDecorationLine: "underline" },
 });
+
+const iosStyles = StyleSheet.create({
+  root: { flex: 1, backgroundColor: t.color.ground },
+  body: { padding: t.space(6), gap: t.space(7), alignItems: "center" },
+  stat: { alignItems: "center", gap: t.space(1) },
+  big: { color: t.color.textSecondary, ...t.type.display, fontSize: 48 },
+  mid: { color: t.color.textSecondary, ...t.type.title },
+  cap: { color: t.color.textMuted, ...t.type.micro },
+  section: { alignSelf: "stretch", borderTopWidth: 1, borderTopColor: t.color.hairline, paddingTop: t.space(6), gap: t.space(2.5), alignItems: "center" },
+  playRow: { alignSelf: "stretch", gap: t.space(0.5) },
+  playTitle: { color: t.color.textSecondary, ...t.type.bodySm },
+  playMin: { color: t.color.textMuted, fontSize: 11 },
+  drift: { color: t.color.label, fontSize: 11 },
+  prompt: { color: t.color.textMuted, ...t.type.bodySm },
+  row: { flexDirection: "row", gap: t.space(3) },
+  btn: { borderWidth: 1, borderColor: t.color.hairline, borderRadius: t.radius.pill, paddingHorizontal: t.space(4.5), paddingVertical: t.space(2.5), minHeight: 44, alignItems: "center", justifyContent: "center" },
+  btnT: { color: t.color.textPrimary, ...t.type.bodySm },
+  note: { color: t.color.textMuted, fontSize: 11, textAlign: "center" },
+  back: { color: t.color.textMuted, ...t.type.label, textDecorationLine: "underline" },
+});
+
+const s = t.ios ? iosStyles : androidStyles;

@@ -1,5 +1,6 @@
 import React from "react";
 import { View, Text, TouchableOpacity, StyleSheet } from "react-native";
+import t from "../theme/tokens";
 
 export default function GettingUpScreen({ onDismiss }: { onDismiss: () => void }) {
   return (
@@ -16,10 +17,20 @@ export default function GettingUpScreen({ onDismiss }: { onDismiss: () => void }
   );
 }
 
-const s = StyleSheet.create({
+const androidStyles = StyleSheet.create({
   body: { flex: 1, alignItems: "center", justifyContent: "center", gap: 20, padding: 32 },
   title: { color: "#c8c0b0", fontSize: 20 },
   body2: { color: "#8a7a5c", fontSize: 14, textAlign: "center", lineHeight: 21 },
   btn: { borderWidth: 1, borderColor: "#3a3325", borderRadius: 999, paddingHorizontal: 24, paddingVertical: 10, marginTop: 8 },
   btnT: { color: "#d9c9a8", fontSize: 15 },
 });
+
+const iosStyles = StyleSheet.create({
+  body: { flex: 1, alignItems: "center", justifyContent: "center", gap: t.space(5), padding: t.space(8) },
+  title: { color: t.color.textSecondary, ...t.type.title, fontSize: 20 },
+  body2: { color: t.color.textMuted, ...t.type.bodySm, textAlign: "center", lineHeight: 21 },
+  btn: { borderWidth: 1, borderColor: t.color.hairline, borderRadius: t.radius.pill, paddingHorizontal: t.space(6), paddingVertical: t.space(2.5), marginTop: t.space(2), minHeight: 44, alignItems: "center", justifyContent: "center" },
+  btnT: { color: t.color.textPrimary, ...t.type.bodySm },
+});
+
+const s = t.ios ? iosStyles : androidStyles;
