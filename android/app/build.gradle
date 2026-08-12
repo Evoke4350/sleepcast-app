@@ -1,3 +1,5 @@
+import com.android.build.OutputFile
+
 apply plugin: "com.android.application"
 apply plugin: "org.jetbrains.kotlin.android"
 apply plugin: "com.facebook.react"
@@ -144,6 +146,39 @@ android {
             // output name). Null here overrides the buildType signingConfig for
             // every foss variant, yielding app-foss-release-unsigned.apk.
             signingConfig null
+        }
+    }
+
+    // F-Droid ships one APK per ABI (each ~25-30MB) instead of the ~87MB
+    // universal. Driven entirely by gradle properties the F-Droid recipe passes
+    // per build block: `enableApkSplits=true targetAbi=<abi> includeUniversalApk=false`.
+    // Off by default, so the `full` (Play) flavor and normal dev builds stay
+    // universal and unaffected.
+    splits {
+        abi {
+            enable project.hasProperty("enableApkSplits") && project.property("enableApkSplits") == "true"
+            reset()
+            if (project.hasProperty("targetAbi")) {
+                include project.property("targetAbi")
+            } else {
+                include "armeabi-v7a", "arm64-v8a", "x86", "x86_64"
+            }
+            universalApk !(project.hasProperty("includeUniversalApk") && project.property("includeUniversalApk") == "false")
+        }
+    }
+}
+
+// Give each per-ABI split APK a distinct, ordered versionCode matching the
+// F-Droid recipe's VercodeOperation (10 * base + index), with the required order
+// armeabi-v7a < arm64-v8a < x86 < x86_64 so the native ABI outranks the compat
+// one on every device. Only fires when an ABI split filter is present, so the
+// universal build keeps its plain versionCode.
+android.applicationVariants.all { variant ->
+    def abiIndex = ["armeabi-v7a": 1, "arm64-v8a": 2, "x86": 3, "x86_64": 4]
+    variant.outputs.each { output ->
+        def abi = output.getFilter(OutputFile.ABI)
+        if (abi != null) {
+            output.versionCodeOverride = variant.versionCode * 10 + abiIndex.get(abi)
         }
     }
 }
