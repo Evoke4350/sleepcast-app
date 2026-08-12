@@ -85,6 +85,16 @@ def enableProguardInReleaseBuilds = false
  */
 def jscFlavor = 'io.github.react-native-community:jsc-android:2026004.+'
 
+// Play (full-flavor) release signing. Credentials live in android/keystore.properties
+// — gitignored, never committed. Absent on CI and the F-Droid buildserver, where the
+// release falls back to debug signing and the foss flavor stays unsigned regardless.
+def releaseKeystorePropsFile = rootProject.file("keystore.properties")
+def releaseKeystoreProps = new Properties()
+if (releaseKeystorePropsFile.exists()) {
+    releaseKeystoreProps.load(new FileInputStream(releaseKeystorePropsFile))
+}
+def hasReleaseKeystore = releaseKeystorePropsFile.exists()
+
 android {
     externalNativeBuild {
         cmake {
@@ -111,15 +121,24 @@ android {
             keyAlias 'androiddebugkey'
             keyPassword 'android'
         }
+        release {
+            if (hasReleaseKeystore) {
+                storeFile file(releaseKeystoreProps['storeFile'])
+                storePassword releaseKeystoreProps['storePassword']
+                keyAlias releaseKeystoreProps['keyAlias']
+                keyPassword releaseKeystoreProps['keyPassword']
+            }
+        }
     }
     buildTypes {
         debug {
             signingConfig signingConfigs.debug
         }
         release {
-            // Caution! In production, you need to generate your own keystore file.
-            // see https://reactnative.dev/docs/signed-apk-android.
-            signingConfig signingConfigs.debug
+            // Sign the Play/full release with the upload key from keystore.properties
+            // when present; otherwise (CI, F-Droid) fall back to debug. The foss flavor
+            // overrides this to null (unsigned) below, so foss is never release-signed.
+            signingConfig hasReleaseKeystore ? signingConfigs.release : signingConfigs.debug
             minifyEnabled enableProguardInReleaseBuilds
             proguardFiles getDefaultProguardFile("proguard-android.txt"), "proguard-rules.pro"
         }
